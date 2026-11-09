@@ -1,0 +1,8 @@
+# Install scripts are denied by default (AGENTS.md security rule 10).
+# Each entry below was reviewed; `false` means the script is not needed:
+# - esbuild: postinstall only verifies the platform binary, which is already
+#   installed through its optional @esbuild/* dependency.
+# - vue-demi: postinstall switches between Vue 2/3 builds; the default is Vue 3.
+allowBuilds:
+  esbuild: false
+  vue-demi: false

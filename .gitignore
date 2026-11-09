@@ -1,0 +1,33 @@
+# Dependencies
+node_modules
+
+# Nuxt / Nitro build output
+.nuxt
+.output
+.data
+.nitro
+.cache
+dist
+
+# Environment (only .env.example is committed)
+.env
+.env.*
+!.env.example
+
+# Tests
+coverage
+test-results
+playwright-report
+blob-report
+playwright/.cache
+
+# Logs and OS files
+logs
+*.log
+.DS_Store
+Thumbs.db
+
+# Editors
+.idea
+.vscode/*
+!.vscode/extensions.json
