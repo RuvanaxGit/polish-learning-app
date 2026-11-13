@@ -5,7 +5,7 @@ Last updated: 2026-11-10
 
 Related documents: [PRD.md](PRD.md), [DECISIONS.md](DECISIONS.md), [../AGENTS.md](../AGENTS.md), [../README.md](../README.md)
 
-This document describes the target architecture for the MVP. **Implemented so far (Phase 1, 2026-11-09):** project skeleton, Docker Compose PostgreSQL, Drizzle client and migration tooling, config parsing, composition root, `GET /api/health`, lint boundary rules, and test infrastructure. Everything else is still the plan. Where a choice involves a real tradeoff, the alternatives are described so the decision can be revisited.
+This document describes the target architecture for the MVP. **Implemented so far:** Phase 1 (2026-11-09): project skeleton, Docker Compose PostgreSQL, Drizzle client and migration tooling, config parsing, composition root, `GET /api/health`, lint boundary rules, and test infrastructure. Phase 2 (2026-11-10): Better Auth with Google and the allowlist (section 8), the identity module (settings, allowlist), `GET /api/me`, `PATCH /api/settings`, the CSRF middleware, test-only session seeding, and the login, dashboard (placeholder), and settings screens. Everything else is still the plan. Where a choice involves a real tradeoff, the alternatives are described so the decision can be revisited.
 
 ---
 
@@ -120,7 +120,7 @@ Paths marked `(P1)` exist since Phase 1; the rest are planned.
 │  ├─ composables/              # useUiStrings (P1); useApi, useAuth, useReviewSession, ...
 │  ├─ locales/en.ts             # all UI strings (prepares later i18n) (P1)
 │  ├─ layouts/                  # default.vue (P1)
-│  ├─ middleware/auth.global.ts # redirects signed-out users to /login, refreshes session cookie
+│  ├─ middleware/auth.global.ts # redirects signed-out users to /login, signed-in users away from it (P2)
 │  └─ assets/css/main.css       # @import "tailwindcss"; @import "@nuxt/ui"; (P1)
 ├─ shared/
 │  └─ contracts/                # Zod request/response schemas used by client and server (P1: health.ts)
@@ -140,7 +140,7 @@ Paths marked `(P1)` exist since Phase 1; the rest are planned.
 │     │  └─ schema/index.ts     # schema entry; one file per module + auth-schema.ts (P1: empty)
 │     ├─ shared/                # errors, Result, Clock, ids, text normalization
 │     └─ modules/
-│        ├─ identity/           # settings, allowlist
+│        ├─ identity/           # settings, allowlist (P2)
 │        ├─ dictionary/         # lookup, details, morphology port, lexeme identity, reports
 │        ├─ vocabulary/
 │        ├─ review/             # cards, FSRS scheduling, review queue
@@ -220,9 +220,9 @@ All endpoints are JSON, under `/api`, and require an authenticated session excep
 | Method | Path | Use case | LLM? |
 | --- | --- | --- | --- |
 | GET | `/api/health` | Readiness: `{ status, database }`, 503 when the database is down; no error details (D-26). **Implemented** | no |
-| `*` | `/api/auth/*` | Better Auth (sign-in, callback, session, sign-out) | no |
-| GET | `/api/me` | Current user, settings, today's LLM usage and limits | no |
-| PATCH | `/api/settings` | Update settings | no |
+| `*` | `/api/auth/*` | Better Auth (sign-in, callback, session, sign-out). **Implemented** | no |
+| GET | `/api/me` | Current user and settings. **Implemented**; today's LLM usage and limits are added with the LLM phase | no |
+| PATCH | `/api/settings` | Update settings (partial, `.strict()`). **Implemented** | no |
 | POST | `/api/dictionary/lookup` | Search: analyses + short translations | maybe (cache miss) |
 | POST | `/api/dictionary/details` | Meanings, examples, forms for a lexeme in the current language | maybe (cache miss) |
 | POST | `/api/dictionary/reports` | Report a wrong AI result | no |
@@ -400,7 +400,7 @@ All four tables use `id uuid DEFAULT uuidv7()` and `timestamptz` columns. The CL
 
 - `user` (id, name, email, email_verified, image, created_at, updated_at)
 - `session` (id, user_id, token, expires_at, ip_address, user_agent, ...)
-- `account` (id, user_id, provider_id, account_id = Google `sub`, tokens, ...)
+- `account` (id, user_id, provider_id, account_id = Google `sub`, tokens (encrypted), ...), plus `UNIQUE (provider_id, account_id)` (not in Better Auth's default schema)
 - `verification` (OAuth state and similar short-lived records)
 
 The schema is generated once with the Better Auth CLI into `server/core/db/schema/auth-schema.ts` and then owned by our migrations. It is regenerated only when Better Auth config or plugins change.
@@ -421,7 +421,7 @@ user_settings
                                             -- treated as 'Europe/Warsaw' while null
   daily_new_limit      int   default 20     CHECK 0..200
   desired_retention    numeric(3,2) default 0.90 CHECK 0.70..0.97
-  llm_daily_lookup_limit  int null          -- per-user overrides of global defaults
+  llm_daily_lookup_limit  int null          -- per-user overrides of global defaults (added with the LLM phase)
   llm_daily_details_limit int null
   created_at, updated_at
 ```
@@ -657,38 +657,24 @@ export default defineEventHandler((event) => auth.handler(toWebRequest(event)))
 ```
 
 - `toWebRequest(event)` converts the h3 event into a Fetch `Request`, including the body stream. **No Nitro middleware may read the request body before this handler**, or the body is gone. Our origin-check middleware inspects headers only and skips `/api/auth/*` entirely (risk R-16).
-- The `auth` instance is created once per process by `createAuth({ db, config })` in `server/core/auth/` and exposed through the container.
+- The `auth` instance is created once per process by `createAuth({ db, config, identity })` in `server/core/auth/create-auth.ts` and exposed through the container. **Implemented (Phase 2).**
 
-### 8.3 Configuration (to be implemented, illustrative)
+### 8.3 Configuration (implemented, `server/core/auth/create-auth.ts`)
 
-```ts
-betterAuth({
-  baseURL: config.BETTER_AUTH_URL,
-  secret: config.BETTER_AUTH_SECRET,
-  database: drizzleAdapter(db, { provider: 'pg', schema: authSchema }),
-  socialProviders: {
-    google: { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET },
-  },
-  account: { accountLinking: { enabled: false } },
-  advanced: { database: { generateId: false } }, // IDs come from uuidv7() defaults (D-28)
-  // trustedOrigins: baseURL is trusted by default; add nothing else in production
-  databaseHooks: {
-    user: {
-      create: {
-        before: async (user) => { /* allowlisted && emailVerified, else throw APIError('FORBIDDEN') */ },
-        after: async (user) => { /* create user_settings with defaults */ },
-      },
-    },
-    session: {
-      create: {
-        before: async (session) => { /* load user by session.userId; stored email still allowlisted, else throw */ },
-      },
-    },
-  },
-})
-```
+| Option | Value | Why |
+| --- | --- | --- |
+| `basePath` / `baseURL` | `/api/auth`, origin of `BETTER_AUTH_URL` | `baseURL` is also the only trusted origin |
+| `emailAndPassword` | disabled | Google only |
+| `socialProviders.google` | client id/secret, `prompt: 'select_account'` | |
+| `account.accountLinking.enabled` | `false` | 8.5 |
+| `account.encryptOAuthTokens` | `true` | Google tokens are stored by Better Auth but never used by us; encrypted at rest |
+| `session.cookieCache.enabled` | `false` | 8.6 |
+| `advanced.database.generateId` | `false` | IDs from `uuidv7()` defaults (D-28) |
+| `advanced.disableOriginCheck` | `false` (explicit) | Better Auth 1.7 **skips its origin/CSRF check when `NODE_ENV=test`** unless set. Explicit `false` makes tests exercise production behavior (D-32) |
+| `databaseHooks` | allowlist checks + settings creation | 8.4 |
+| `telemetry.enabled` | `false` | No third-party telemetry |
 
-No email/password, no plugins in the MVP. Exact option names are verified against the installed Better Auth version during scaffolding and covered by integration tests (section 13).
+No plugins. All of this is covered by `tests/integration/auth-lifecycle.test.ts`, which drives the real Google OAuth flow through `auth.handler` with Google's token endpoint stubbed (`tests/support/fake-google.ts`; any other network call fails the test).
 
 ### 8.4 Allowlist enforcement
 
@@ -699,8 +685,8 @@ The allowlist is enforced at **two** points, because Better Auth's `user.create.
 | `databaseHooks.user.create.before` | First sign-in (new user) | Lowercased email is in `allowed_emails` **and** `emailVerified` is true | Blocks uninvited sign-ups. Nothing is written if it throws. |
 | `databaseHooks.session.create.before` | Every sign-in (new and returning) | The stored user's email is still in `allowed_emails` | Blocks returning users who were removed from the allowlist. |
 
-- Hooks reject by throwing `APIError` from `better-auth/api`. The OAuth callback then redirects to the error URL. The sign-in call passes `errorCallbackURL: '/login'` (and/or the global API-error URL option), so the login page shows "not invited". The exact option is verified at scaffolding.
-- `allowed_emails` is seeded from `ALLOWED_EMAILS` at startup (insert-only, never deletes). The table is the source of truth.
+- Hooks reject by throwing `APIError('FORBIDDEN', { code: 'NOT_INVITED' })`. Better Auth forwards the code to the `errorCallbackURL` passed by the client (`/login`), so the browser lands on `/login?error=NOT_INVITED` and the page shows "not invited". Any other error code shows a generic message. Unverified Google emails are rejected the same way.
+- `allowed_emails` is seeded from `ALLOWED_EMAILS` at startup (insert-only, never deletes; counts are logged, never addresses). The table is the source of truth.
 - **Removing a user** is an operator procedure (section 16): delete the `allowed_emails` row **and** delete that user's `session` rows. Without the second step, existing sessions stay valid until they expire (up to 7 days), because session validation does not re-check the allowlist on every request. That per-request check is a deliberate tradeoff: it would cost an extra query per request for an operation that happens almost never.
 
 ### 8.5 Returning users and account linking
@@ -713,9 +699,12 @@ The allowlist is enforced at **two** points, because Better Auth's `user.create.
 - Database sessions. The cookie holds an opaque session token: `httpOnly`, `SameSite=Lax`, and `Secure` when `BETTER_AUTH_URL` is https (Better Auth defaults).
 - Expiry: Better Auth defaults, `expiresIn` 7 days and `updateAge` 1 day (sliding: a session used after one day gets a new 7-day expiry).
 - `session.cookieCache` stays **off**, so revocation and sign-out take effect on the next request. The cost is one indexed session lookup per authenticated API request, which is negligible at this scale.
-- `requireUser(event)` (in `server/utils/`) calls `auth.api.getSession({ headers: event.headers })`, throws 401 without a session, and returns `{ userId }`.
-- **Cookie refresh:** when a server-side `auth.api.getSession` call slides the expiry, the new `Set-Cookie` only reaches the browser if it is forwarded. `requireUser` requests the response headers from Better Auth and copies any `Set-Cookie` onto the h3 response. In addition, the global route middleware calls `authClient.useSession(useFetch)`, which goes through `auth.handler` and refreshes the cookie on navigation.
-- **SSR:** server-rendered pages call our `/api` through `useFetch` / `useRequestFetch`, which forward the incoming cookie. Plain `$fetch` during SSR would arrive unauthenticated.
+- `requireUser(event)` (in `server/utils/`) calls `auth.api.getSession({ headers: event.headers, returnHeaders: true })`, throws 401 without a session, and returns `{ userId, name, email, image }`.
+- **Cookie refresh:** when a server-side `auth.api.getSession` call slides the expiry, the new `Set-Cookie` only reaches the browser if it is forwarded. `requireUser` copies any `Set-Cookie` from Better Auth onto the h3 response.
+- **Client session state:** the global route middleware (`app/middleware/auth.global.ts`) loads `GET /api/me` once into `useCurrentUser()` state, redirects signed-out users to `/login` and signed-in users away from it. The dashboard (`/`) is the landing page (D-18).
+- **SSR:** during server rendering `useCurrentUser` calls `$fetch.raw('/api/me')` with the incoming `cookie` header and appends any refreshed `Set-Cookie` to the page response. GET requests are not subject to the origin check, so SSR never needs to fake an `Origin`. Browser-side mutations are same-origin `fetch` calls, which always carry `Origin`.
+- **Sign-in and sign-out** use Better Auth's Vue client in the browser only (`app/composables/use-auth.ts`), so those requests reach `auth.handler` and its origin check.
+- Buttons that start client-side actions (sign in, sign out, save) are disabled until the page has hydrated (`useHydrated`), so an early click is never silently lost.
 
 ### 8.7 Authorization
 
@@ -726,17 +715,26 @@ The allowlist is enforced at **two** points, because Better Auth's `user.create.
 
 Better Auth's protections (origin validation against `trustedOrigins`, Fetch Metadata checks, OAuth `state` + PKCE, `SameSite=Lax` cookies) apply **only to requests that reach `auth.handler`**. Calls our own handlers make to `auth.api` bypass them ([Better Auth security reference](https://better-auth.com/docs/reference/security)). So:
 
-- `server/middleware/origin-check.ts` applies to every `POST`/`PUT`/`PATCH`/`DELETE` under `/api/` except `/api/auth/*`. It:
-  1. **requires** an `Origin` header and accepts it only if `(await auth.$context).isTrustedOrigin(origin)` is true (the same rule Better Auth uses)
+- `server/middleware/origin-check.ts` applies to every `POST`/`PUT`/`PATCH`/`DELETE` under `/api/` except `/api/auth/*` (path normalized first, so `/api/auth/../settings` is checked). The decision logic is the framework-free `server/core/auth/request-guard.ts`. It:
+  1. **requires** an `Origin` header and accepts it only if `(await auth.$context).isTrustedOrigin(origin)` is true (the same rule Better Auth uses); `null`, foreign, and look-alike origins are rejected
   2. rejects requests with `Sec-Fetch-Site: cross-site`
-  3. requires `Content-Type: application/json`
+  3. requires `Content-Type: application/json` (a body-less `DELETE` has none and is allowed; a cross-site form can't send `DELETE`)
   4. reads headers only, never the body
-- Rejections return `403` with no detail.
-- Request bodies are size-limited, and all inputs are parsed with Zod (`.strict()` objects, explicit max lengths).
+- Rejections return `403` with `{ error: { code: 'forbidden' } }` and no detail.
+- Request bodies are read through `readJsonBody` (16 KiB limit, invalid JSON → 400) and validated with Zod (`.strict()` objects, explicit max lengths).
+- **Verified by tests:** unit tests for every rule; E2E API tests for missing/foreign/look-alike origins, cross-site Fetch Metadata, and form/multipart/text bodies (state unchanged after each rejection); Better Auth rejecting a foreign-origin sign-out (integration and E2E); browser flows (settings save, sign-out, the Google redirect) working through both checks; SSR-rendered pages with the session cookie.
+
+### 8.10 Test-only session seeding (E2E)
+
+AGENTS.md security rule 9, implemented with three independent layers (D-31):
+
+1. **Build time:** the handler (`server/testing/e2e-session.ts`) lives outside Nitro's scanned directories. It is registered only by the `e2e` build environment in `nuxt.config.ts` (`nuxt build --envName e2e`), which writes to `.output-e2e/`. The production build (`.output/`) contains no trace of it; `tests/build/production-build.test.ts` scans the build output and confirms the route answers 404 even with both flags set.
+2. **Runtime:** the handler answers 404 unless `NODE_ENV=test` and `E2E_AUTH_BYPASS=true`. `parseConfig` refuses to start the server if the flag is set under any other `NODE_ENV`, which the build test also checks.
+3. **No impersonation:** the route accepts only an empty JSON body (anything else → 400) and always creates a **new** user with a random address under the reserved `.invalid` TLD, then a session for that user. It cannot produce a session for an existing user. It goes through Better Auth's internal adapter, so the same allowlist and settings hooks run as for a real sign-in, and it is subject to the origin check like any other mutation.
 
 ### 8.9 Rate limiting and proxies
 
-Better Auth's built-in rate limiting is enabled with in-memory storage, which is fine for a single instance. It keys on the client IP from `X-Forwarded-For` by default. Behind a reverse proxy, the deployment must either overwrite that header or configure Better Auth's trusted proxy / IP header settings, otherwise clients can spoof their IP. This is part of OD-04 (hosting).
+Better Auth's built-in rate limiting uses its default: enabled in production (`NODE_ENV=production`) with in-memory storage, which is fine for a single instance, and off in development and tests. It keys on the client IP from `X-Forwarded-For` by default. Behind a reverse proxy, the deployment must either overwrite that header or configure Better Auth's trusted proxy / IP header settings, otherwise clients can spoof their IP. This is part of OD-04 (hosting).
 
 ---
 

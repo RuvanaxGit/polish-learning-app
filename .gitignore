@@ -4,6 +4,7 @@ node_modules
 # Nuxt / Nitro build output
 .nuxt
 .output
+.output-e2e
 .data
 .nitro
 .cache

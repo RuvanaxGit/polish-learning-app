@@ -18,7 +18,8 @@ If a request conflicts with these documents, stop and ask. Don't silently diverg
 The project is in the **implementation phase** (approved by the owner on 2026-11-09). Work is delivered in phases; implement only what the current, owner-approved phase asks for.
 
 - **Phase 1 — Project foundation: done.** Nuxt skeleton, Docker Compose PostgreSQL, Drizzle tooling, config, composition root, `GET /api/health`, lint/typecheck/test infrastructure.
-- Not yet implemented: auth, LLM, dictionary, vocabulary, FSRS review, statistics, and the full UI.
+- **Phase 2 — Authentication, settings, app shell: done.** Better Auth (Google + allowlist), identity module, `/api/me`, `/api/settings`, CSRF middleware, login/dashboard/settings screens.
+- Not yet implemented: LLM, dictionary, vocabulary, FSRS review, statistics.
 
 Product decisions that shape all phases (see [DECISIONS.md](docs/DECISIONS.md)): the dashboard is always the landing page (D-18); FSRS review is the only study mode (D-19); no audio controls (D-20); Nitro is the backend, no Fastify for now (D-21); the Figma Make prototype is the visual specification, the PRD wins on conflicts (D-22, D-30); LLM limits (D-27); UUIDv7 IDs from PostgreSQL (D-28); per-user + global quota locks (D-29).
 
@@ -115,9 +116,11 @@ Before declaring work done, run and pass:
 pnpm lint
 pnpm typecheck
 pnpm test          # unit + integration (requires `docker compose up -d db` and TEST_DATABASE_URL)
-pnpm test:e2e      # when UI flows or endpoints changed (builds first; needs the test database)
+pnpm test:e2e      # when UI flows or endpoints changed (production build + build-safety check, then e2e build + Playwright)
 ```
 
+- Never set security-relevant library options by relying on defaults; some libraries relax checks under `NODE_ENV=test` (D-32). E2E must run with production-equivalent security settings.
+- The E2E session route exists only in the e2e build (D-31). Don't move it into a scanned Nitro directory or add inputs that select a user.
 - Integration and E2E tests refuse to run unless `TEST_DATABASE_URL` points to a database whose name ends in `_test`.
 - Dependency install scripts are denied by default (`allowBuilds` in `pnpm-workspace.yaml`). If a new dependency needs one, review the script and record the decision there.
 

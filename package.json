@@ -10,15 +10,17 @@
   "scripts": {
     "dev": "nuxt dev",
     "build": "nuxt build",
+    "build:e2e": "nuxt build --envName e2e",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "nuxt typecheck",
-    "test": "vitest run",
+    "test": "vitest run --project unit --project integration",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test:e2e": "nuxt build && playwright test",
+    "test:build": "nuxt build && vitest run --project build",
+    "test:e2e": "nuxt build && vitest run --project build && nuxt build --envName e2e && playwright test",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
@@ -26,6 +28,7 @@
   "dependencies": {
     "@iconify-json/lucide": "1.2.152",
     "@nuxt/ui": "4.12.0",
+    "better-auth": "1.7.18",
     "drizzle-orm": "0.45.4",
     "nuxt": "4.6.4",
     "pg": "8.23.1",

@@ -2,7 +2,7 @@
 
 A responsive web app for learning Polish vocabulary. Look up words and inflected forms, get short translations and detailed explanations in your language (Russian, Ukrainian, or English), save the dictionary form or the exact form you met, and review with FSRS spaced repetition.
 
-> **Status: implementation, Phase 1 (project foundation) complete.** The app boots with a placeholder dashboard, a database health check, and the full lint/typecheck/test toolchain. Sign-in, lookup, vocabulary, review, and the real UI come in later phases. See [docs/PRD.md](docs/PRD.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+> **Status: implementation, Phase 2 (authentication, settings, app shell) complete.** Google sign-in with an invite allowlist, sign-out, a placeholder dashboard, and the settings page work. Lookup, vocabulary, review, and statistics come in later phases. See [docs/PRD.md](docs/PRD.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Stack
 
@@ -39,7 +39,9 @@ Architecture: a modular monolith with framework-independent business logic in `s
 # 1. Create your local env file
 cp .env.example .env            # PowerShell: Copy-Item .env.example .env
 #    Edit .env: choose a local POSTGRES_PASSWORD and put the same password
-#    into DATABASE_URL and TEST_DATABASE_URL.
+#    into DATABASE_URL and TEST_DATABASE_URL; set BETTER_AUTH_SECRET
+#    (openssl rand -base64 32), your Google OAuth client (see below), and
+#    ALLOWED_EMAILS (your own Google address).
 
 # 2. Start PostgreSQL (first start also creates the <POSTGRES_DB>_test database)
 docker compose up -d --wait db
@@ -47,7 +49,7 @@ docker compose up -d --wait db
 # 3. Install dependencies (also runs `nuxt prepare`)
 pnpm install
 
-# 4. Apply database migrations (none exist yet in Phase 1; this is a no-op)
+# 4. Apply database migrations
 pnpm db:migrate
 
 # 5. Run the dev server
@@ -62,16 +64,17 @@ Stop the database with `docker compose stop db`. Your data lives in the `slowko_
 | --- | --- |
 | `pnpm dev` | Nuxt dev server |
 | `pnpm build` / `pnpm preview` | Production build and local preview (`node .output/server/index.mjs`) |
+| `pnpm build:e2e` | Test-only build with the E2E session route, written to `.output-e2e/`. Never deploy it |
 | `pnpm lint` / `pnpm lint:fix` | ESLint (`@nuxt/eslint`, stylistic formatting, architecture boundary rules) |
 | `pnpm typecheck` | `nuxt typecheck` (vue-tsc over app, server, shared, and config files) |
-| `pnpm test` | All Vitest projects: unit + integration (needs the Docker database) |
+| `pnpm test` | Unit + integration tests (needs the Docker database) |
 | `pnpm test:unit` | Unit tests only (no database) |
 | `pnpm test:integration` | Integration tests against `TEST_DATABASE_URL` (migrated first) |
-| `pnpm test:e2e` | Production build, then Playwright at desktop and mobile viewports against the test database |
+| `pnpm test:build` | Production build, then checks that it contains no test-only code (`tests/build/`) |
+| `pnpm test:e2e` | `test:build`, then the e2e build and Playwright at desktop and mobile viewports against the test database |
 | `pnpm db:generate` | Generate a SQL migration from Drizzle schema changes |
 | `pnpm db:migrate` | Apply pending migrations to `DATABASE_URL` |
 | `pnpm db:studio` | Drizzle Studio for browsing local data |
-| `pnpm auth:schema` | *(planned)* Regenerate the Better Auth Drizzle schema |
 
 First-time E2E setup: `pnpm exec playwright install chromium` (both Playwright projects use Chromium).
 
@@ -94,7 +97,7 @@ Troubleshooting:
 
 All values in `.env.example` are **placeholders**. Never commit real values. `.env` is git-ignored, and only `.env.example` is committed. `nuxt dev`, `drizzle-kit`, Vitest, and Playwright read `.env` automatically; variables already set in the environment take precedence.
 
-### Used now (Phase 1)
+### Used now
 
 | Variable | Required | Example / default | Purpose |
 | --- | --- | --- | --- |
@@ -104,6 +107,12 @@ All values in `.env.example` are **placeholders**. Never commit real values. `.e
 | `DATABASE_URL` | yes | `postgresql://slowko:<password>@localhost:5432/slowko` | App database |
 | `DATABASE_POOL_MAX` | no | `10` | Max pooled connections (1–50) |
 | `TEST_DATABASE_URL` | for tests | `postgresql://slowko:<password>@localhost:5432/slowko_test` | Integration/E2E database. The name must end in `_test` |
+| `BETTER_AUTH_SECRET` | yes | `<random 32+ chars>` | Signs and encrypts auth data (also encrypts stored OAuth tokens). Generate with `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | yes | `http://localhost:3000` | Public base URL. Used for OAuth callbacks and as the only trusted origin |
+| `GOOGLE_CLIENT_ID` | yes | `<your-client-id>.apps.googleusercontent.com` | Google OAuth client |
+| `GOOGLE_CLIENT_SECRET` | yes | `<your-client-secret>` | Google OAuth client secret. Server-only |
+| `ALLOWED_EMAILS` | no | `you@example.com,friend@example.com` | Seeds the sign-up allowlist at startup (insert-only; see `docs/operations.sql` to revoke) |
+| `E2E_AUTH_BYPASS` | tests only | `false` | Test-only session seeding. Startup fails if `true` outside `NODE_ENV=test`; the route only exists in the e2e build |
 
 ### Planned (added with their features)
 
@@ -111,11 +120,6 @@ LLM limit defaults follow [PRD US-12](docs/PRD.md) and [ARCHITECTURE section 9.2
 
 | Variable | Required | Example / default | Purpose |
 | --- | --- | --- | --- |
-| `BETTER_AUTH_SECRET` | yes | `<random 32+ chars>` | Signs and encrypts auth data. Generate with `openssl rand -base64 32` |
-| `BETTER_AUTH_URL` | yes | `http://localhost:3000` | Public base URL. Used for OAuth callbacks and origin checks |
-| `GOOGLE_CLIENT_ID` | yes | `<your-client-id>.apps.googleusercontent.com` | Google OAuth client |
-| `GOOGLE_CLIENT_SECRET` | yes | `<your-client-secret>` | Google OAuth client secret |
-| `ALLOWED_EMAILS` | yes | `you@example.com,friend@example.com` | Seeds the sign-up allowlist |
 | `LLM_PROVIDER` | yes | `fake` or `openai` | `fake` returns deterministic fixtures and needs no key |
 | `OPENAI_API_KEY` | if `openai` | `<your-openai-key>` | Server-only |
 | `OPENAI_MODEL_FAST` | if `openai` | see [DECISIONS.md OD-03](docs/DECISIONS.md) | Lookup and short translation |
@@ -127,11 +131,10 @@ LLM limit defaults follow [PRD US-12](docs/PRD.md) and [ARCHITECTURE section 9.2
 | `LLM_DAILY_BUDGET_USD` | no | `1.00` | Estimated global spend per UTC day |
 | `LLM_MONTHLY_BUDGET_USD` | no | `10.00` | Estimated global spend per UTC month |
 | `MORPHOLOGY_PROVIDER` | no | `llm` | `llm` in MVP. `dictionary`/`composite` reserved for later |
-| `E2E_AUTH_BYPASS` | tests only | `false` | Enables test-only session seeding. Refused outside `NODE_ENV=test` |
 
 The app's LLM budgets are soft, estimate-based limits. Configure a real cap at the provider before using a real key (DECISIONS OD-09).
 
-## Google OAuth setup (needed from the auth phase on)
+## Google OAuth setup
 
 1. Open **Google Cloud Console → APIs & Services → Credentials**.
 2. Configure the **OAuth consent screen** (External, testing mode is fine; add your test users).
@@ -143,18 +146,26 @@ The app's LLM budgets are soft, estimate-based limits. Configure a real cap at t
 
 `BETTER_AUTH_URL` must match the origin you use in the browser, or Google will report `redirect_uri_mismatch`.
 
+The credentials stay in your local `.env` (git-ignored). Tests never use them: integration tests stub Google's token endpoint, and E2E uses test-only session seeding.
+
+## Operator procedures
+
+Inviting users, revoking access (allowlist **and** sessions), and deleting accounts are SQL procedures in [docs/operations.sql](docs/operations.sql).
+
 ## Project layout
 
 ```text
 app/              Vue pages, layouts, composables, UI strings (client + SSR)
 shared/contracts/ Zod schemas shared by client and server
 server/api/       Thin Nitro HTTP handlers
-server/plugins/   Nitro plugins (container lifecycle)
-server/utils/     Nitro-side helpers (useContainer)
+server/middleware/ CSRF origin check for mutating /api routes
+server/plugins/   Nitro plugins (container lifecycle, allowlist seeding)
+server/utils/     Nitro-side helpers (useContainer, requireUser, error mapping)
+server/testing/   Test-only E2E session route (compiled into the e2e build only)
 server/core/      Framework-independent config, composition root, DB, modules
 drizzle/          Generated SQL migrations
 docker/           Docker Compose init scripts
-tests/            Integration (Vitest) and E2E (Playwright) tests + support code
+tests/            Integration, build-safety (Vitest) and E2E (Playwright) tests + support code
 docs/             PRD, architecture, decisions
 ```
 

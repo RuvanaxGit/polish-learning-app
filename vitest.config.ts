@@ -12,7 +12,17 @@ export default defineConfig({
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['server/core/**/*.test.ts', 'shared/**/*.test.ts'],
+          include: ['server/core/**/*.test.ts', 'server/utils/**/*.test.ts', 'shared/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'build',
+          environment: 'node',
+          // Inspects the production build in .output; run via `pnpm test:build`.
+          include: ['tests/build/**/*.test.ts'],
+          hookTimeout: 60_000,
+          testTimeout: 60_000,
         },
       },
       {
