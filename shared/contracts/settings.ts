@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 export const translationLanguages = ['ru', 'en', 'uk'] as const;
+export type TranslationLanguage = typeof translationLanguages[number];
 export const uiLocales = ['en'] as const;
 export const DEFAULT_TIMEZONE = 'Europe/Warsaw';
 

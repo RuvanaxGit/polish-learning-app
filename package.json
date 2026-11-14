@@ -21,6 +21,9 @@
     "test:integration": "vitest run --project integration",
     "test:build": "nuxt build && vitest run --project build",
     "test:e2e": "nuxt build && vitest run --project build && nuxt build --envName e2e && playwright test",
+    "eval:smoke": "vitest run --config vitest.eval.config.ts smoke",
+    "eval:pilot": "vitest run --config vitest.eval.config.ts pilot",
+    "eval:full": "vitest run --config vitest.eval.config.ts full",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio"
@@ -31,6 +34,7 @@
     "better-auth": "1.7.18",
     "drizzle-orm": "0.45.4",
     "nuxt": "4.6.4",
+    "openai": "7.56.0",
     "pg": "8.23.1",
     "tailwindcss": "4.3.5",
     "zod": "4.6.7"

@@ -72,6 +72,7 @@ Stop the database with `docker compose stop db`. Your data lives in the `slowko_
 | `pnpm test:integration` | Integration tests against `TEST_DATABASE_URL` (migrated first) |
 | `pnpm test:build` | Production build, then checks that it contains no test-only code (`tests/build/`) |
 | `pnpm test:e2e` | `test:build`, then the e2e build and Playwright at desktop and mobile viewports against the test database |
+| `pnpm eval:smoke` / `eval:pilot` / `eval:full` | **Paid** live LLM evaluation, one stage each. Skipped unless `LLM_EVAL_LIVE` names that stage. See [tests/eval/README.md](tests/eval/README.md) |
 | `pnpm db:generate` | Generate a SQL migration from Drizzle schema changes |
 | `pnpm db:migrate` | Apply pending migrations to `DATABASE_URL` |
 | `pnpm db:studio` | Drizzle Studio for browsing local data |

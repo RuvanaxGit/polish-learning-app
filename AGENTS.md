@@ -19,7 +19,8 @@ The project is in the **implementation phase** (approved by the owner on 2026-11
 
 - **Phase 1 — Project foundation: done.** Nuxt skeleton, Docker Compose PostgreSQL, Drizzle tooling, config, composition root, `GET /api/health`, lint/typecheck/test infrastructure.
 - **Phase 2 — Authentication, settings, app shell: done.** Better Auth (Google + allowlist), identity module, `/api/me`, `/api/settings`, CSRF middleware, login/dashboard/settings screens.
-- Not yet implemented: LLM, dictionary, vocabulary, FSRS review, statistics.
+- **Phase 3 — Dictionary & LLM integration: in progress.** Steps 3.0–3.1 are done: the evaluation kit (draft prompts, accounting, provider port + OpenAI adapter, price table, `tests/eval/` harness). Live evaluation stages (smoke → pilot → full) each need explicit owner authorization and are never run by agents on their own (D-38).
+- Not yet implemented: LLM gateway, dictionary, vocabulary, FSRS review, statistics.
 
 Product decisions that shape all phases (see [DECISIONS.md](docs/DECISIONS.md)): the dashboard is always the landing page (D-18); FSRS review is the only study mode (D-19); no audio controls (D-20); Nitro is the backend, no Fastify for now (D-21); the Figma Make prototype is the visual specification, the PRD wins on conflicts (D-22, D-30); LLM limits (D-27); UUIDv7 IDs from PostgreSQL (D-28); per-user + global quota locks (D-29).
 
