@@ -1,18 +1,18 @@
-import { sql } from 'drizzle-orm'
-import type { Database } from './client'
+import { sql } from 'drizzle-orm';
+import type { Database } from './client';
 
-export type DatabaseHealth = Readonly<{ database: 'up' | 'down' }>
+export type DatabaseHealth = Readonly<{ database: 'up' | 'down' }>;
 
 export function createDatabaseHealthCheck(db: Database): () => Promise<DatabaseHealth> {
   return async () => {
     try {
-      await db.execute(sql`select 1`)
-      return { database: 'up' }
+      await db.execute(sql`select 1`);
+      return { database: 'up' };
     }
     catch {
       // The cause is deliberately dropped: connection errors can include host
       // names and user names, and the health endpoint is unauthenticated.
-      return { database: 'down' }
+      return { database: 'down' };
     }
-  }
+  };
 }

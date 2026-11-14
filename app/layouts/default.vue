@@ -1,27 +1,3 @@
-<script setup lang="ts">
-const t = useUiStrings()
-const route = useRoute()
-const { signOut } = useAuth()
-const hydrated = useHydrated()
-
-// Only pages that exist are linked; unbuilt features get no nav entry (D-20 rule).
-const links = [
-  { label: t.nav.dashboard, icon: 'i-lucide-layout-dashboard', to: '/' },
-  { label: t.nav.settings, icon: 'i-lucide-settings', to: '/settings' },
-]
-
-const signingOut = ref(false)
-async function onSignOut() {
-  signingOut.value = true
-  try {
-    await signOut()
-  }
-  finally {
-    signingOut.value = false
-  }
-}
-</script>
-
 <template>
   <div class="min-h-dvh flex flex-col bg-default">
     <header class="sticky top-0 z-10 border-b border-default bg-default/90 backdrop-blur">
@@ -69,3 +45,27 @@ async function onSignOut() {
     </main>
   </div>
 </template>
+
+<script setup lang="ts">
+const t = useUiStrings();
+const route = useRoute();
+const { signOut } = useAuth();
+const hydrated = useHydrated();
+
+// Only pages that exist are linked; unbuilt features get no nav entry (D-20 rule).
+const links = [
+  { label: t.nav.dashboard, icon: 'i-lucide-layout-dashboard', to: '/' },
+  { label: t.nav.settings, icon: 'i-lucide-settings', to: '/settings' },
+];
+
+const signingOut = ref(false);
+async function onSignOut() {
+  signingOut.value = true;
+  try {
+    await signOut();
+  }
+  finally {
+    signingOut.value = false;
+  }
+}
+</script>

@@ -82,6 +82,8 @@ Nuxt 4 (Nitro, Vue 3), TypeScript 6 (strict; not 7, see D-23), Nuxt UI 4 + Tailw
 ### Style
 
 - Formatting and linting are automated (ESLint via `@nuxt/eslint`, configured at scaffolding time). Don't hand-format against the tool.
+- Statements end with semicolons (`stylistic.semi` in `nuxt.config.ts`).
+- Vue SFC block order: `<template>`, then `<script>`, then `<style>` (`vue/block-order`).
 - Comments explain constraints the code can't express (why), not what the next line does.
 
 ## 4. Security rules

@@ -1,5 +1,5 @@
-import { z } from 'zod'
-import { settingsSchema } from './settings'
+import { z } from 'zod';
+import { settingsSchema } from './settings';
 
 export const meResponseSchema = z.object({
   user: z.object({
@@ -9,6 +9,6 @@ export const meResponseSchema = z.object({
     image: z.string().nullable(),
   }),
   settings: settingsSchema,
-})
+});
 
-export type MeResponse = z.infer<typeof meResponseSchema>
+export type MeResponse = z.infer<typeof meResponseSchema>;

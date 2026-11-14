@@ -1,12 +1,3 @@
-<script setup lang="ts">
-// Dashboard: the default authenticated landing page (D-18). Statistics and
-// review counts arrive with their phases.
-const t = useUiStrings()
-const { me } = useCurrentUser()
-
-useHead({ title: `${t.dashboard.title} · ${t.app.name}` })
-</script>
-
 <template>
   <section class="space-y-4">
     <div class="space-y-1">
@@ -30,3 +21,12 @@ useHead({ title: `${t.dashboard.title} · ${t.app.name}` })
     />
   </section>
 </template>
+
+<script setup lang="ts">
+// Dashboard: the default authenticated landing page (D-18). Statistics and
+// review counts arrive with their phases.
+const t = useUiStrings();
+const { me } = useCurrentUser();
+
+useHead({ title: `${t.dashboard.title} · ${t.app.name}` });
+</script>

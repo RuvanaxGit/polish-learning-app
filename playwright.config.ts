@@ -1,12 +1,12 @@
-import { randomBytes } from 'node:crypto'
-import { existsSync } from 'node:fs'
-import { defineConfig, devices } from '@playwright/test'
-import { requireTestDatabaseUrl } from './tests/support/test-database'
+import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { defineConfig, devices } from '@playwright/test';
+import { requireTestDatabaseUrl } from './tests/support/test-database';
 
-if (existsSync('.env')) process.loadEnvFile('.env')
+if (existsSync('.env')) process.loadEnvFile('.env');
 
-const port = 3100
-const baseURL = `http://127.0.0.1:${port}`
+const port = 3100;
+const baseURL = `http://127.0.0.1:${port}`;
 
 // E2E runs against the e2e build (`nuxt build --envName e2e`, output in
 // .output-e2e), the only build containing the test-session route, and the test
@@ -46,4 +46,4 @@ export default defineConfig({
       E2E_AUTH_BYPASS: 'true',
     },
   },
-})
+});

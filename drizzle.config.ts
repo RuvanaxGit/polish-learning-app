@@ -1,13 +1,13 @@
-import { existsSync } from 'node:fs'
-import { defineConfig } from 'drizzle-kit'
+import { existsSync } from 'node:fs';
+import { defineConfig } from 'drizzle-kit';
 
 // drizzle-kit does not read .env itself. Variables already set in the
 // environment take precedence over the file.
-if (existsSync('.env')) process.loadEnvFile('.env')
+if (existsSync('.env')) process.loadEnvFile('.env');
 
-const url = process.env.DATABASE_URL
+const url = process.env.DATABASE_URL;
 if (!url) {
-  throw new Error('DATABASE_URL is not set. Copy .env.example to .env and fill it in (see README.md).')
+  throw new Error('DATABASE_URL is not set. Copy .env.example to .env and fill it in (see README.md).');
 }
 
 export default defineConfig({
@@ -18,4 +18,4 @@ export default defineConfig({
   casing: 'snake_case',
   strict: true,
   verbose: true,
-})
+});

@@ -1,43 +1,3 @@
-<script setup lang="ts">
-import { NOT_INVITED_ERROR_CODE } from '#shared/contracts/auth'
-
-definePageMeta({ layout: 'auth' })
-
-const t = useUiStrings()
-const route = useRoute()
-const { signInWithGoogle } = useAuth()
-const hydrated = useHydrated()
-
-useHead({ title: `${t.login.title} · ${t.app.name}` })
-
-const errorCode = computed(() => typeof route.query.error === 'string' ? route.query.error.toUpperCase() : null)
-const pending = ref(false)
-const startFailed = ref(false)
-
-const alert = computed(() => {
-  if (errorCode.value === NOT_INVITED_ERROR_CODE) {
-    return { title: t.login.errors.notInvitedTitle, description: t.login.errors.notInvited }
-  }
-  if (errorCode.value !== null || startFailed.value) {
-    return { title: t.login.errors.genericTitle, description: t.login.errors.generic }
-  }
-  return null
-})
-
-async function onSignIn() {
-  pending.value = true
-  startFailed.value = false
-  try {
-    // Navigates away to Google on success.
-    await signInWithGoogle()
-  }
-  catch {
-    startFailed.value = true
-    pending.value = false
-  }
-}
-</script>
-
 <template>
   <UCard :ui="{ body: 'space-y-6 p-6 sm:p-8' }">
     <div class="space-y-2 text-center">
@@ -83,3 +43,43 @@ async function onSignIn() {
     </p>
   </UCard>
 </template>
+
+<script setup lang="ts">
+import { NOT_INVITED_ERROR_CODE } from '#shared/contracts/auth';
+
+definePageMeta({ layout: 'auth' });
+
+const t = useUiStrings();
+const route = useRoute();
+const { signInWithGoogle } = useAuth();
+const hydrated = useHydrated();
+
+useHead({ title: `${t.login.title} · ${t.app.name}` });
+
+const errorCode = computed(() => typeof route.query.error === 'string' ? route.query.error.toUpperCase() : null);
+const pending = ref(false);
+const startFailed = ref(false);
+
+const alert = computed(() => {
+  if (errorCode.value === NOT_INVITED_ERROR_CODE) {
+    return { title: t.login.errors.notInvitedTitle, description: t.login.errors.notInvited };
+  }
+  if (errorCode.value !== null || startFailed.value) {
+    return { title: t.login.errors.genericTitle, description: t.login.errors.generic };
+  }
+  return null;
+});
+
+async function onSignIn() {
+  pending.value = true;
+  startFailed.value = false;
+  try {
+    // Navigates away to Google on success.
+    await signInWithGoogle();
+  }
+  catch {
+    startFailed.value = true;
+    pending.value = false;
+  }
+}
+</script>

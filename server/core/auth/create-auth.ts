@@ -1,22 +1,22 @@
-import { betterAuth } from 'better-auth'
-import type { BetterAuthOptions } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { APIError } from 'better-auth/api'
-import type { AppConfig } from '../config'
-import type { Database } from '../db/client'
-import { account, session, user, verification } from '../db/schema/auth'
-import type { IdentityModule } from '../modules/identity'
-import { AUTH_BASE_PATH, NOT_INVITED_ERROR_CODE } from './constants'
+import { betterAuth } from 'better-auth';
+import type { BetterAuthOptions } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { APIError } from 'better-auth/api';
+import type { AppConfig } from '../config';
+import type { Database } from '../db/client';
+import { account, session, user, verification } from '../db/schema/auth';
+import type { IdentityModule } from '../modules/identity';
+import { AUTH_BASE_PATH, NOT_INVITED_ERROR_CODE } from './constants';
 
 function notInvited(): APIError {
-  return new APIError('FORBIDDEN', { code: NOT_INVITED_ERROR_CODE, message: 'This account is not invited.' })
+  return new APIError('FORBIDDEN', { code: NOT_INVITED_ERROR_CODE, message: 'This account is not invited.' });
 }
 
 export type AuthDependencies = Readonly<{
-  db: Database
-  config: AppConfig
-  identity: IdentityModule
-}>
+  db: Database;
+  config: AppConfig;
+  identity: IdentityModule;
+}>;
 
 /** Better Auth options (ARCHITECTURE.md sections 8.3-8.6). */
 export function createAuthOptions({ db, config, identity }: AuthDependencies) {
@@ -57,11 +57,11 @@ export function createAuthOptions({ db, config, identity }: AuthDependencies) {
           // First sign-in only: invited and verified, otherwise nothing is written (ARCHITECTURE 8.4).
           before: async (candidate) => {
             if (candidate.emailVerified !== true || !(await identity.isEmailAllowed(candidate.email))) {
-              throw notInvited()
+              throw notInvited();
             }
           },
           after: async (created) => {
-            await identity.ensureSettings(created.id)
+            await identity.ensureSettings(created.id);
           },
         },
       },
@@ -70,17 +70,17 @@ export function createAuthOptions({ db, config, identity }: AuthDependencies) {
           // Every sign-in: the stored user must still be invited (blocks removed users).
           before: async (candidate) => {
             if (!(await identity.isUserAllowed(candidate.userId))) {
-              throw notInvited()
+              throw notInvited();
             }
           },
         },
       },
     },
-  } satisfies BetterAuthOptions
+  } satisfies BetterAuthOptions;
 }
 
 export function createAuth(dependencies: AuthDependencies) {
-  return betterAuth(createAuthOptions(dependencies))
+  return betterAuth(createAuthOptions(dependencies));
 }
 
-export type Auth = ReturnType<typeof createAuth>
+export type Auth = ReturnType<typeof createAuth>;

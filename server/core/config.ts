@@ -1,6 +1,6 @@
-import { z } from 'zod'
+import { z } from 'zod';
 
-const booleanFlag = z.enum(['true', 'false']).default('false').transform(value => value === 'true')
+const booleanFlag = z.enum(['true', 'false']).default('false').transform(value => value === 'true');
 
 // Variables are added here together with the features that need them.
 const envSchema = z.object({
@@ -13,25 +13,25 @@ const envSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().trim().min(1, 'is required'),
   ALLOWED_EMAILS: z.string().default(''),
   E2E_AUTH_BYPASS: booleanFlag,
-})
+});
 
 export type AppConfig = Readonly<{
-  nodeEnv: 'development' | 'test' | 'production'
-  database: Readonly<{ url: string, poolMax: number }>
+  nodeEnv: 'development' | 'test' | 'production';
+  database: Readonly<{ url: string; poolMax: number }>;
   auth: Readonly<{
-    secret: string
-    baseUrl: string
-    googleClientId: string
-    googleClientSecret: string
-  }>
+    secret: string;
+    baseUrl: string;
+    googleClientId: string;
+    googleClientSecret: string;
+  }>;
   /** Raw ALLOWED_EMAILS entries; validated and normalized by the identity module. */
-  allowedEmails: readonly string[]
+  allowedEmails: readonly string[];
   /** True only when NODE_ENV=test and E2E_AUTH_BYPASS=true (see parseConfig). */
-  e2eAuthBypass: boolean
-}>
+  e2eAuthBypass: boolean;
+}>;
 
 export class ConfigError extends Error {
-  override readonly name = 'ConfigError'
+  override readonly name = 'ConfigError';
 }
 
 /**
@@ -40,19 +40,19 @@ export class ConfigError extends Error {
  * DATABASE_URL or BETTER_AUTH_SECRET are credentials.
  */
 export function parseConfig(env: Readonly<Record<string, string | undefined>>): AppConfig {
-  const result = envSchema.safeParse(env)
+  const result = envSchema.safeParse(env);
   if (!result.success) {
     const details = result.error.issues
       .map(issue => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
-      .join('; ')
-    throw new ConfigError(`Invalid environment configuration. ${details}`)
+      .join('; ');
+    throw new ConfigError(`Invalid environment configuration. ${details}`);
   }
-  const parsed = result.data
+  const parsed = result.data;
 
   // AGENTS.md security rule 9. The bypass route is also absent from production
   // builds (it is only compiled into the e2e build), so this is a second layer.
   if (parsed.E2E_AUTH_BYPASS && parsed.NODE_ENV !== 'test') {
-    throw new ConfigError('Invalid environment configuration. E2E_AUTH_BYPASS: may only be enabled when NODE_ENV=test')
+    throw new ConfigError('Invalid environment configuration. E2E_AUTH_BYPASS: may only be enabled when NODE_ENV=test');
   }
 
   return {
@@ -66,5 +66,5 @@ export function parseConfig(env: Readonly<Record<string, string | undefined>>): 
     },
     allowedEmails: parsed.ALLOWED_EMAILS.split(',').map(entry => entry.trim()).filter(entry => entry !== ''),
     e2eAuthBypass: parsed.E2E_AUTH_BYPASS,
-  }
+  };
 }

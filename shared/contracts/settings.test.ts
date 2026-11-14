@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { isValidTimeZone, updateSettingsRequestSchema } from './settings'
+import { describe, expect, it } from 'vitest';
+import { isValidTimeZone, updateSettingsRequestSchema } from './settings';
 
 describe('updateSettingsRequestSchema', () => {
   it.each([
@@ -14,8 +14,8 @@ describe('updateSettingsRequestSchema', () => {
     { timezone: 'UTC' },
     { translationLanguage: 'en', dailyNewLimit: 50 },
   ])('accepts %j', (body) => {
-    expect(updateSettingsRequestSchema.safeParse(body).success).toBe(true)
-  })
+    expect(updateSettingsRequestSchema.safeParse(body).success).toBe(true);
+  });
 
   it.each([
     {},
@@ -34,14 +34,14 @@ describe('updateSettingsRequestSchema', () => {
     { timezone: null },
     { translationLanguage: 'en', extra: true },
   ])('rejects %j', (body) => {
-    expect(updateSettingsRequestSchema.safeParse(body).success).toBe(false)
-  })
-})
+    expect(updateSettingsRequestSchema.safeParse(body).success).toBe(false);
+  });
+});
 
 describe('isValidTimeZone', () => {
   it('knows IANA zones and rejects others', () => {
-    expect(isValidTimeZone('Europe/Kyiv')).toBe(true)
-    expect(isValidTimeZone('America/Argentina/Buenos_Aires')).toBe(true)
-    expect(isValidTimeZone('Europe/Atlantis')).toBe(false)
-  })
-})
+    expect(isValidTimeZone('Europe/Kyiv')).toBe(true);
+    expect(isValidTimeZone('America/Argentina/Buenos_Aires')).toBe(true);
+    expect(isValidTimeZone('Europe/Atlantis')).toBe(false);
+  });
+});

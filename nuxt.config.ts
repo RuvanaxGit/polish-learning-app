@@ -1,7 +1,7 @@
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath } from 'node:url';
 
 // Forward slashes: Windows backslashes end up as escape sequences in generated imports.
-const fromRoot = (path: string) => fileURLToPath(new URL(path, import.meta.url)).replaceAll('\\', '/')
+const fromRoot = (path: string) => fileURLToPath(new URL(path, import.meta.url)).replaceAll('\\', '/');
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -50,7 +50,9 @@ export default defineNuxtConfig({
 
   eslint: {
     config: {
-      stylistic: true,
+      stylistic: {
+        semi: true,
+      },
     },
   },
-})
+});

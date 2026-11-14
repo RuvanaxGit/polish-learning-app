@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
-import { checkMutationRequest, isGuardedRequest } from './request-guard'
-import type { MutationRequest } from './request-guard'
+import { describe, expect, it } from 'vitest';
+import { checkMutationRequest, isGuardedRequest } from './request-guard';
+import type { MutationRequest } from './request-guard';
 
-const trusted = (origin: string) => origin === 'https://slowko.example'
+const trusted = (origin: string) => origin === 'https://slowko.example';
 
 const valid: MutationRequest = {
   method: 'PATCH',
@@ -11,7 +11,7 @@ const valid: MutationRequest = {
   secFetchSite: 'same-origin',
   contentType: 'application/json',
   hasBody: true,
-}
+};
 
 describe('isGuardedRequest', () => {
   it.each([
@@ -28,17 +28,17 @@ describe('isGuardedRequest', () => {
     ['POST', '/api/auth/../settings', true],
     ['POST', '/login', false],
   ])('%s %s -> %s', (method, path, expected) => {
-    expect(isGuardedRequest(method, path)).toBe(expected)
-  })
-})
+    expect(isGuardedRequest(method, path)).toBe(expected);
+  });
+});
 
 describe('checkMutationRequest', () => {
   it('allows a same-origin JSON request', () => {
-    expect(checkMutationRequest(valid, trusted)).toEqual({ allowed: true })
-    expect(checkMutationRequest({ ...valid, contentType: 'application/json; charset=utf-8' }, trusted)).toEqual({ allowed: true })
+    expect(checkMutationRequest(valid, trusted)).toEqual({ allowed: true });
+    expect(checkMutationRequest({ ...valid, contentType: 'application/json; charset=utf-8' }, trusted)).toEqual({ allowed: true });
     // Older browsers and some clients omit Fetch Metadata; Origin is still required.
-    expect(checkMutationRequest({ ...valid, secFetchSite: null }, trusted)).toEqual({ allowed: true })
-  })
+    expect(checkMutationRequest({ ...valid, secFetchSite: null }, trusted)).toEqual({ allowed: true });
+  });
 
   it.each<[string, Partial<MutationRequest>, string]>([
     ['missing Origin', { origin: null }, 'origin_missing'],
@@ -53,19 +53,19 @@ describe('checkMutationRequest', () => {
     ['missing content type', { contentType: null }, 'not_json'],
     ['json-like content type', { contentType: 'application/jsonp' }, 'not_json'],
   ])('rejects %s', (_label, change, reason) => {
-    expect(checkMutationRequest({ ...valid, ...change }, trusted)).toEqual({ allowed: false, reason })
-  })
+    expect(checkMutationRequest({ ...valid, ...change }, trusted)).toEqual({ allowed: false, reason });
+  });
 
   it('requires JSON for DELETE only when it has a body', () => {
-    expect(checkMutationRequest({ ...valid, method: 'DELETE', contentType: null, hasBody: false }, trusted)).toEqual({ allowed: true })
+    expect(checkMutationRequest({ ...valid, method: 'DELETE', contentType: null, hasBody: false }, trusted)).toEqual({ allowed: true });
     expect(checkMutationRequest({ ...valid, method: 'DELETE', contentType: 'text/plain', hasBody: true }, trusted))
-      .toEqual({ allowed: false, reason: 'not_json' })
+      .toEqual({ allowed: false, reason: 'not_json' });
     expect(checkMutationRequest({ ...valid, method: 'DELETE', origin: null, hasBody: false }, trusted))
-      .toEqual({ allowed: false, reason: 'origin_missing' })
-  })
+      .toEqual({ allowed: false, reason: 'origin_missing' });
+  });
 
   it('does not inspect requests it does not guard', () => {
-    expect(checkMutationRequest({ ...valid, method: 'GET', origin: null }, trusted)).toEqual({ allowed: true })
-    expect(checkMutationRequest({ ...valid, path: '/api/auth/sign-out', origin: null }, trusted)).toEqual({ allowed: true })
-  })
-})
+    expect(checkMutationRequest({ ...valid, method: 'GET', origin: null }, trusted)).toEqual({ allowed: true });
+    expect(checkMutationRequest({ ...valid, path: '/api/auth/sign-out', origin: null }, trusted)).toEqual({ allowed: true });
+  });
+});

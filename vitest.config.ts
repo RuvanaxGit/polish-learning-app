@@ -1,9 +1,9 @@
-import { existsSync } from 'node:fs'
-import { defineConfig } from 'vitest/config'
+import { existsSync } from 'node:fs';
+import { defineConfig } from 'vitest/config';
 
 // Vitest only exposes VITE_* variables by itself. Variables already set in
 // the environment take precedence over the file.
-if (existsSync('.env')) process.loadEnvFile('.env')
+if (existsSync('.env')) process.loadEnvFile('.env');
 
 export default defineConfig({
   test: {
@@ -39,4 +39,4 @@ export default defineConfig({
       },
     ],
   },
-})
+});

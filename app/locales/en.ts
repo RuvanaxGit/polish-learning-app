@@ -70,6 +70,6 @@ export const en = {
   errors: {
     generic: 'Something went wrong. Please try again.',
   },
-} as const
+} as const;
 
-export type UiStrings = typeof en
+export type UiStrings = typeof en;

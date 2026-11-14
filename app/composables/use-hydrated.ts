@@ -4,9 +4,9 @@
  * early click (slow network, fast user, or a test runner) is never lost.
  */
 export function useHydrated() {
-  const hydrated = ref(false)
+  const hydrated = ref(false);
   onMounted(() => {
-    hydrated.value = true
-  })
-  return hydrated
+    hydrated.value = true;
+  });
+  return hydrated;
 }
