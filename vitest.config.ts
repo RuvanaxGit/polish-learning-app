@@ -12,7 +12,9 @@ export default defineConfig({
         test: {
           name: 'unit',
           environment: 'node',
-          include: ['server/core/**/*.test.ts', 'server/utils/**/*.test.ts', 'shared/**/*.test.ts'],
+          // tests/eval/*.test.ts are the offline checks of the LLM evaluation
+          // harness (no network). Live, paid runs use vitest.eval.config.ts.
+          include: ['server/core/**/*.test.ts', 'server/utils/**/*.test.ts', 'shared/**/*.test.ts', 'tests/eval/**/*.test.ts'],
         },
       },
       {

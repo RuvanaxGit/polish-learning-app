@@ -1,7 +1,7 @@
 # Decisions, Open Questions, Risks, and Assumptions
 
 Status: Living document (implementation started)
-Last updated: 2026-11-10
+Last updated: 2026-11-14
 
 This file keeps four things separate:
 
@@ -53,6 +53,10 @@ Related: [PRD.md](PRD.md), [ARCHITECTURE.md](ARCHITECTURE.md), [../AGENTS.md](..
 | D-33 | Better Auth stores Google OAuth tokens **encrypted** (`account.encryptOAuthTokens: true`); `account` has an extra `UNIQUE (provider_id, account_id)` (2026-11-10) | We never use the tokens, so they're pure liability at rest; one Google identity must map to one account | Defaults |
 | D-34 | The per-user LLM override columns of `user_settings` (ARCHITECTURE 7.2) are added in the LLM phase, not in Phase 2 (2026-11-10) | No unused columns; an additive migration later is cheap | Create them now |
 | D-35 | Client-side action buttons (sign in, sign out, save) are **disabled until the page has hydrated** (2026-11-10) | Prevents clicks on server-rendered buttons from being silently dropped (seen as E2E flakiness; same risk for real users on slow networks) | Leave buttons active before hydration |
+| D-36 | **Phase 3 plan (revision 2) approved as the architectural baseline** (2026-11-14, owner), with these conditions: (1) a search makes **at most one charged provider call**: a cold lookup never triggers a paid `short_translation` in the same request; (2) a concurrency test must show that an LLM result generated before a translation or morphology revision change cannot overwrite newer state; (3) the evaluation is staged (smoke 2–3 calls → pilot 10–15 words → full only after explicit approval); (4) live calls are off by default; (5) accounting fails closed when usage or pricing is unknown | Owner review of the Phase 3 plan | — |
+| D-37 | **`openai` SDK 7.56.0**, exact pin (2026-11-14). 7.57.0 (released the day before) was not used because it is younger than pnpm 12's default `minimumReleaseAge`; no policy exclusion was added. The adapter calls `responses.create` with `zodTextFormat` (strict JSON schema; Zod 4 supported) and validates the output itself, instead of `responses.parse`, which throws on invalid output and would lose the usage of a billed call | Supply-chain policy kept intact; post-call accounting always has usage | Adding a `minimumReleaseAgeExclude` entry; `responses.parse` |
+| D-38 | **Pre-gateway live evaluation**: a one-time, scope-limited exception to AGENTS security rule 3 (2026-11-14, owner, plan R2-5/N-1). Dev-only harness in `tests/eval/`, never in `pnpm test` or CI; each stage runs only when `LLM_EVAL_LIVE` names it; every call is priced before and after; the stage stops on unknown usage, cost above estimate, or account errors; per-stage cap $0.25 / $1 / $3. **The cap is an application-level estimate, not a hard limit** (the hard limit is OD-09). The exception ends in plan step 3.10, when the harness moves onto the gateway | Choose models and freeze prompt schemas before building the gateway around them | Building the full gateway first |
+| D-39 | Grammar enums live in `shared/contracts/dictionary.ts`; `deriveDiscriminator` and `buildTagKey` live in `shared/dictionary/` (2026-11-14) | LLM prompt validation needs them, and llm must not depend on dictionary (that would be a cycle). The client will render the same tags | Placing them in the dictionary module (ARCHITECTURE 7.3 wording) |
 
 ---
 
@@ -144,6 +148,9 @@ Each has a recommendation. Defaults are applied at scaffolding time unless the o
 | R-17 | **Design drift**: the Figma Make prototype shows features that are deferred (e.g. audio) or flows that differ from the PRD | Medium | Low | D-22: PRD wins; review each screen against the PRD before building it |
 | R-18 | **Figma Make prototype not machine-readable** (found 2026-11-10): the URL returns only a JavaScript shell without a Figma login, so the Phase 2 screens could not be compared with it | High (until exports are provided) | Medium (visual rework) | Phase 2 screens use Nuxt UI defaults with a consistent, minimal system; align them once the owner provides frame exports or screenshots |
 | R-19 | **Library test-mode defaults** weaken security in tests only (e.g. Better Auth skipping origin checks under `NODE_ENV=test`, D-32) | Medium | Medium (tests miss regressions) | Set security options explicitly instead of relying on defaults; E2E checks run with production-equivalent settings |
+| R-20 | **Price table not verified** (found 2026-11-14): `model-prices.ts` holds the OD-03 figures; cached-input prices are unknown (charged at full input price) | Medium | Medium (budget estimates wrong) | Owner verifies against the pricing page before any live run; unknown models fail closed; the provider-side cap (OD-09) is the hard limit |
+| R-21 | **Golden set not yet reviewed** by a native speaker or checked against SGJP/Morfeusz 2 | Medium | Medium (wrong model choice) | Tiered scoring keeps debatable lemma choices out of the gates; review before the full stage gates anything |
+| R-22 | **Token cap pressure** (plan C-13): the worst-case lookup estimate is ~2,160 input tokens (instructions + JSON schema), so the 50k tokens/user/day cap may bind before the 30-lookup cap | Medium | Low–Medium | The smoke and pilot runs measure actual input tokens; compact the prompts or bring numbers to the owner (changing D-27 needs approval) |
 
 ---
 

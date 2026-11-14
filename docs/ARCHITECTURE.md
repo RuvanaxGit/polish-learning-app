@@ -5,7 +5,7 @@ Last updated: 2026-11-10
 
 Related documents: [PRD.md](PRD.md), [DECISIONS.md](DECISIONS.md), [../AGENTS.md](../AGENTS.md), [../README.md](../README.md)
 
-This document describes the target architecture for the MVP. **Implemented so far:** Phase 1 (2026-11-09): project skeleton, Docker Compose PostgreSQL, Drizzle client and migration tooling, config parsing, composition root, `GET /api/health`, lint boundary rules, and test infrastructure. Phase 2 (2026-11-10): Better Auth with Google and the allowlist (section 8), the identity module (settings, allowlist), `GET /api/me`, `PATCH /api/settings`, the CSRF middleware, test-only session seeding, and the login, dashboard (placeholder), and settings screens. Everything else is still the plan. Where a choice involves a real tradeoff, the alternatives are described so the decision can be revisited.
+This document describes the target architecture for the MVP. **Implemented so far:** Phase 1 (2026-11-09): project skeleton, Docker Compose PostgreSQL, Drizzle client and migration tooling, config parsing, composition root, `GET /api/health`, lint boundary rules, and test infrastructure. Phase 2 (2026-11-10): Better Auth with Google and the allowlist (section 8), the identity module (settings, allowlist), `GET /api/me`, `PATCH /api/settings`, the CSRF middleware, test-only session seeding, and the login, dashboard (placeholder), and settings screens. Phase 3 steps 3.0–3.1 (2026-11-14): the LLM evaluation kit, which includes draft prompts, accounting functions, the `LlmProvider` port with its OpenAI adapter, the model price table, and an offline-tested evaluation harness (`tests/eval/`). The gateway, dictionary module, and database tables are not built yet. Everything else is still the plan. Where a choice involves a real tradeoff, the alternatives are described so the decision can be revisited.
 
 ---
 
@@ -36,7 +36,7 @@ flowchart LR
 
 ### 1.1 Technology baseline
 
-Versions checked against official sources on 2026-11-08. Exact versions are pinned in `package.json` and `pnpm-lock.yaml`. Installed in Phase 1 (2026-11-09): nuxt 4.6.4, @nuxt/ui 4.12.0, tailwindcss 4.3.5, zod 4.6.7, drizzle-orm 0.45.4, drizzle-kit 0.31.11, pg 8.23.1, typescript 6.0.3, vue-tsc 3.3.14, vitest 5.1.0, @playwright/test 1.65.0, eslint 10.14.0, @nuxt/eslint 1.17.0, pnpm 12.18.0.
+Versions checked against official sources on 2026-11-08. Exact versions are pinned in `package.json` and `pnpm-lock.yaml`. Installed in Phase 1 (2026-11-09): nuxt 4.6.4, @nuxt/ui 4.12.0, tailwindcss 4.3.5, zod 4.6.7, drizzle-orm 0.45.4, drizzle-kit 0.31.11, pg 8.23.1, typescript 6.0.3, vue-tsc 3.3.14, vitest 5.1.0, @playwright/test 1.65.0, eslint 10.14.0, @nuxt/eslint 1.17.0, pnpm 12.18.0. Installed in Phase 3 (2026-11-14): openai 7.56.0 (D-37).
 
 | Concern | Choice | Version line | Notes |
 | --- | --- | --- | --- |
