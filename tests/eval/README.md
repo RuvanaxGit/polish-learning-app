@@ -25,11 +25,16 @@ when the owner authorizes a specific stage.**
 - A stage runs only when `LLM_EVAL_LIVE` equals its name (`smoke`, `pilot`, or `full`). Any other value, including `true`, runs nothing. Set it in the shell for one run, not in `.env`.
 - `pnpm test` and a bare `vitest` never include the live files (separate config).
 - Every call is accounted:
-  - **before the call**, the price must be known (unknown model = abort before any call), and the worst-case estimate must fit the remaining cap. The estimate is input at 2 characters per token (including the JSON schema) plus `max_output_tokens`, all priced as uncached input.
-  - **after the call**, the provider-reported usage is charged. If usage is unknown (timeout, network error), the worst-case estimate is charged and the stage stops.
+  - **before the call**, the price must be known (unknown model = abort before any call), and the estimated cost must fit the remaining cap. The estimate is input at 2 characters per token (including the JSON schema) plus `max_output_tokens`, all priced as uncached input. The output part is a hard provider limit; **the input part is a heuristic, not an upper bound**.
+  - **after the call**, the provider-reported usage is charged. If usage is unknown (timeout, network error), the estimate is charged and the stage stops.
   - The stage also stops if an actual cost exceeds its estimate, and on `insufficient_quota`, authentication, or bad-request errors.
+  - If anything throws unexpectedly, the run ends, but the report still lists every completed call and its charged cost (`abortReason` in `report.json`).
 - `maxRetries: 0`, `store: false`, per-prompt `max_output_tokens` and timeouts. Only golden-set words are sent.
-- **The cap is a conservative application-level estimate, not a hard spending limit.** It depends on the price table in `server/core/modules/llm/infrastructure/model-prices.ts` (verify it before a run) and on the provider honoring `max_output_tokens`. The hard limit is the provider-side project budget (DECISIONS OD-09), which must be configured first.
+- **The cap is an application-level estimate, not a hard spending limit.**
+  - It depends on the price table in `server/core/modules/llm/infrastructure/model-prices.ts` (verify it before a run) and on the input heuristic.
+  - A call that costs more than estimated is only detected after it has been billed, so the cap can be exceeded by that call's excess before the stage stops.
+  - **The cap applies per execution.** Repeated runs each start from zero and are not summed. The cumulative limit is the provider-side project budget (DECISIONS OD-09), which must be configured first. Each run's spend is recorded in its `report.json` / `summary.md`.
+- Model-selection gates fail unless every planned case of that model and variant was executed (`run_complete`). An interrupted or capped run can't pass.
 
 | Stage | Calls | Cap (max; `LLM_EVAL_CAP_USD` can only lower it) |
 | --- | --- | --- |

@@ -1,10 +1,18 @@
 // Application-level spending guard for the live evaluation.
 //
-// The cap is a CONSERVATIVE ESTIMATE, not a guaranteed hard limit: it relies on
-// the recorded price table and on the provider honoring max_output_tokens. The
-// real hard cap is the provider-side budget (DECISIONS OD-09). The guard:
-// - authorizes a call only if spent + worst-case estimate <= cap
-// - charges the provider-reported cost, or the worst-case estimate when usage is unknown
+// The cap is NOT a hard spending limit. Limitations:
+// - The input estimate is a heuristic (estimateRequest), not an upper bound,
+//   and the price table may be stale. A call that costs more than estimated
+//   is detected only after it has been billed; the guard then stops, so the
+//   cap can be exceeded by that one call's excess.
+// - When usage is unknown (timeout, network error) the estimate is charged,
+//   but the provider may have billed more (or less).
+// - The cap applies PER EXECUTION. Every run starts at zero; repeated runs
+//   are not summed. The cumulative limit is the provider-side project budget
+//   (DECISIONS OD-09), and each run's spend is recorded in its report.
+// The guard:
+// - authorizes a call only if spent + estimate <= cap
+// - charges the provider-reported cost, or the estimate when usage is unknown
 // - stops (fail-closed) once accounting becomes uncertain
 
 export class EvalStop extends Error {

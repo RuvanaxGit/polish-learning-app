@@ -38,7 +38,7 @@ export type ProviderErrorKind
     | 'invalid_output'
     | 'unknown';
 
-/** `usage: null` means the provider reported none; callers must assume the worst case. */
+/** `usage: null` means the provider reported none; callers charge their estimate and treat accounting as uncertain. */
 export type ProviderResult<T>
   = | Readonly<{ kind: 'ok'; output: T; usage: ProviderUsage | null; latencyMs: number }>
     | Readonly<{ kind: 'refusal'; usage: ProviderUsage | null; latencyMs: number }>

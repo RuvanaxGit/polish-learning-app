@@ -84,7 +84,7 @@ describe('runStage: fail-closed accounting', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('charges the worst-case estimate and stops when usage is unknown', async () => {
+  it('charges the estimate and stops when usage is unknown', async () => {
     const { provider, calls } = stubProvider(() => ({ kind: 'error', error: 'timeout', usage: null, latencyMs: 10_000, httpStatus: null }));
     const report = await runStage('smoke', config, { provider });
     expect(calls).toHaveLength(1);
@@ -94,7 +94,7 @@ describe('runStage: fail-closed accounting', () => {
     expect(report.spentMicroUsd).toBe(firstLookupEstimate());
   });
 
-  it('does not start a call whose worst-case estimate would exceed the cap', async () => {
+  it('does not start a call whose estimate would exceed the cap', async () => {
     const { provider, calls } = stubProvider();
     const report = await runStage('smoke', { ...config, capMicroUsd: firstLookupEstimate() - 1 }, { provider });
     expect(calls).toHaveLength(0);
@@ -125,6 +125,92 @@ describe('runStage: fail-closed accounting', () => {
     expect(calls).toHaveLength(3);
     expect(report.records[0]).toMatchObject({ status: 'provider_error', errorKind: 'invalid_output', accounting: 'actual' });
     expect(report.scores[0]?.score.ok).toBe(false);
+  });
+});
+
+// Regression (review finding 2): partial results survive unexpected exceptions.
+describe('runStage: unexpected exceptions after paid calls', () => {
+  function sequenceProvider(handlers: readonly ((request: ProviderRequest<unknown>, input: Record<string, unknown>) => ProviderResult<unknown>)[]) {
+    let call = 0;
+    const provider: LlmProvider = {
+      id: 'sequence',
+      async complete<T>(request: ProviderRequest<T>): Promise<ProviderResult<T>> {
+        const handler = handlers[call++];
+        if (!handler) throw new Error('no more responses');
+        const result = handler(request, JSON.parse(request.input) as Record<string, unknown>);
+        // Object.assign (not spread) keeps accessor properties of the handler's result intact.
+        return (result.kind === 'ok' ? Object.assign(result, { output: request.schema.parse(result.output) }) : result) as ProviderResult<T>;
+      },
+    };
+    return provider;
+  }
+  const ok = (request: ProviderRequest<unknown>, input: Record<string, unknown>): ProviderResult<unknown> =>
+    ({ kind: 'ok', output: validOutput(request, input), usage, latencyMs: 5 });
+
+  it('records a provider exception as a charged call and stops instead of losing the report', async () => {
+    const provider = sequenceProvider([ok, () => {
+      throw new TypeError('provider bug');
+    }]);
+    const report = await runStage('smoke', config, { provider });
+    expect(report.records.map(record => [record.status, record.accounting])).toEqual([['ok', 'actual'], ['provider_error', 'estimate']]);
+    expect(report.stopReason).toBe('provider_exception:TypeError');
+    expect(report.skippedSteps).toBe(1);
+    expect(report.spentMicroUsd).toBe(report.records.reduce((total, record) => total + record.chargedCostMicroUsd, 0));
+  });
+
+  it('records a refine exception as a failed call with its actual cost', async () => {
+    const throwingRefine = { ...lookupPrompt, refine: () => {
+      throw new RangeError('refine bug');
+    } };
+    const { executeCall } = await import('./call');
+    const { provider } = stubProvider();
+    const budget = createEvalBudget(1_000_000);
+    const { record } = await executeCall({ provider, budget }, {
+      callId: 'x', prompt: throwingRefine, input: { key: 'psa', language: 'ru' }, model: FAST, variant: 'combined', repetition: 1, subject: 'noun-psa', language: 'ru',
+    });
+    expect(record).toMatchObject({ status: 'refine_failed', refineReason: 'exception:RangeError', accounting: 'actual' });
+    expect(budget.spentMicroUsd()).toBe(record.chargedCostMicroUsd);
+  });
+
+  it('returns the completed calls and the full spend when the run aborts unexpectedly', async () => {
+    const broken = (request: ProviderRequest<unknown>, input: Record<string, unknown>): ProviderResult<unknown> => {
+      const result = { kind: 'ok', output: validOutput(request, input), usage } as const;
+      // A malformed result whose field access throws outside the call's own guards.
+      return Object.defineProperty({ ...result }, 'latencyMs', { get: () => {
+        throw new SyntaxError('malformed result');
+      } }) as ProviderResult<unknown>;
+    };
+    const report = await runStage('smoke', config, { provider: sequenceProvider([ok, broken]) });
+    expect(report.abortReason).toBe('unexpected_error:SyntaxError');
+    expect(report.records).toHaveLength(1);
+    expect(report.skippedSteps).toBe(2);
+    // The aborted call was billed and charged: spend covers more than the recorded calls.
+    expect(report.spentMicroUsd).toBeGreaterThan(report.records[0]?.chargedCostMicroUsd ?? 0);
+  });
+});
+
+// Regression (review finding 4): expected vs. completed cases per model and variant.
+describe('runStage: completeness', () => {
+  const twoFast = { fastModels: [FAST, 'gpt-6.1-terra'], detailModels: [DETAIL], capMicroUsd: 1_000_000 };
+
+  it('passes run_complete only when every planned case ran', async () => {
+    const { provider } = stubProvider();
+    const report = await runStage('pilot', twoFast, { provider });
+    expect(report.lookupMetrics.map(entry => [entry.model, entry.completeness.value])).toEqual([[FAST, 1], ['gpt-6.1-terra', 1]]);
+    expect(report.lookupMetrics.every(entry => entry.gates.find(gate => gate.name === 'run_complete')?.passed)).toBe(true);
+  });
+
+  it('fails run_complete for a capped run, including models that never ran', async () => {
+    const { provider } = stubProvider();
+    const report = await runStage('pilot', { ...twoFast, capMicroUsd: 3 * firstLookupEstimate() }, { provider });
+    expect(report.stopReason).toBe('cap_reached');
+    const byModel = new Map(report.lookupMetrics.map(entry => [entry.model, entry]));
+    expect(byModel.get(FAST)?.completeness).toMatchObject({ denominator: PILOT_ITEM_IDS.length });
+    expect(byModel.get(FAST)?.completeness.value).toBeLessThan(1);
+    expect(byModel.get('gpt-6.1-terra')?.completeness).toMatchObject({ numerator: 0, denominator: PILOT_ITEM_IDS.length });
+    for (const entry of report.lookupMetrics) {
+      expect(entry.gates.find(gate => gate.name === 'run_complete')?.passed).toBe(false);
+    }
   });
 });
 

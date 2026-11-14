@@ -23,8 +23,10 @@ export function formatSummary(report: StageReport): string {
   lines.push(`- Prompts: ${Object.entries(report.promptVersions).map(([name, version]) => `${name}=${version}`).join(', ')}`);
   lines.push(`- Models: fast=${report.fastModels.join(', ')}; detail=${report.detailModels.join(', ')}`);
   lines.push(`- Spend (application estimate, not provider billing): ${usd(report.spentMicroUsd)} of cap ${usd(report.capMicroUsd)}`);
+  lines.push(`- Cap scope: this execution only; repeated runs each get a fresh cap`);
   lines.push(`- Calls: ${records.length}; planned steps: ${report.plannedSteps}; skipped: ${report.skippedSteps}; stop reason: ${report.stopReason ?? 'none'}`);
-  lines.push(`- Charged at worst-case estimate (usage unknown): ${records.filter(record => record.accounting === 'estimate').length}`);
+  if (report.abortReason) lines.push(`- **ABORTED: ${report.abortReason}** (completed calls and their costs are still listed below)`);
+  lines.push(`- Charged at the heuristic estimate (usage unknown): ${records.filter(record => record.accounting === 'estimate').length}`);
   lines.push('');
 
   lines.push('## Calls by status', '', '| feature | model | ok | refusal | provider error | schema invalid | refine failed | input tok | cached tok | output tok (reasoning) | cost |', '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
@@ -45,10 +47,11 @@ export function formatSummary(report: StageReport): string {
     for (const entry of report.lookupMetrics) {
       const m = entry.metrics;
       lines.push(`### ${entry.model} (${entry.variant})`, '');
+      lines.push(`- completed cases: ${pct(entry.completeness)}`);
       lines.push(`- ok rate: ${pct(m.okRate)}`);
       lines.push(`- Tier A lemma recall: ${pct(m.tierALemmaRecall)}`);
       lines.push(`- ambiguity coverage: ${pct(m.ambiguityCoverage)}`);
-      lines.push(`- tag accuracy: ${pct(m.tagAccuracy)}`);
+      lines.push(`- tag accuracy (missing readings count as wrong): ${pct(m.tagAccuracy)}; tag coverage: ${pct(m.tagCoverage)}; tag correctness when found: ${pct(m.tagCorrectnessWhenFound)}`);
       lines.push(`- negatives: ${pct(m.negativeAccuracy)}; suggestions: ${pct(m.suggestionAccuracy)}`);
       lines.push(`- convention adherence (not gating): ${pct(m.conventionAdherence)}`);
       lines.push(`- repeat stability: ${pct(entry.stability)}; lookup latency p95: ${entry.lookupLatencyP95Ms ?? 'n/a'} ms; extra analyses for review: ${m.extraAnalyses}`);

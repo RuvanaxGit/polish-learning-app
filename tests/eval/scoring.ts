@@ -26,8 +26,12 @@ export type ItemScore = Readonly<{
   ok: boolean;
   requiredTotal: number;
   requiredMatched: number;
-  tagsChecked: number;
-  tagsCorrect: number;
+  /** Required readings that specify tags. A missing reading counts here and is never correct. */
+  tagReadingsTotal: number;
+  /** ...of which an analysis was found (coverage). */
+  tagReadingsFound: number;
+  /** ...of which every matching analysis has acceptable tags (correctness). */
+  tagReadingsCorrect: number;
   /** Tier `negative`: rejected as not Polish? Otherwise null. */
   negativeCorrect: boolean | null;
   /** Required suggestion produced? Null when not scored. */
@@ -61,18 +65,22 @@ export function scoreLookup(item: GoldenItem, outcome: LookupOutcome): ItemScore
   const conventions: ConventionCheck[] = [];
 
   let requiredMatched = 0;
-  let tagsChecked = 0;
-  let tagsCorrect = 0;
+  let tagReadingsTotal = 0;
+  let tagReadingsFound = 0;
+  let tagReadingsCorrect = 0;
 
   for (const reading of required) {
     const matching = analyses.filter(analysis => matchesReading(reading, analysis));
     if (matching.length > 0) requiredMatched += 1;
 
+    // Scored per required reading, so a missing reading lowers accuracy
+    // instead of dropping out of the denominator.
     if (reading.tags) {
       const specs = reading.tags;
-      for (const analysis of matching) {
-        tagsChecked += 1;
-        if (specs.some(spec => fitsTagSpec(spec, analysis.tags))) tagsCorrect += 1;
+      tagReadingsTotal += 1;
+      if (matching.length > 0) {
+        tagReadingsFound += 1;
+        if (matching.every(analysis => specs.some(spec => fitsTagSpec(spec, analysis.tags)))) tagReadingsCorrect += 1;
       }
     }
     if (item.tier === 'C') conventions.push({ check: 'reading_present', passed: matching.length > 0 });
@@ -113,8 +121,9 @@ export function scoreLookup(item: GoldenItem, outcome: LookupOutcome): ItemScore
     ok: outcome.ok,
     requiredTotal: required.length,
     requiredMatched,
-    tagsChecked,
-    tagsCorrect,
+    tagReadingsTotal,
+    tagReadingsFound,
+    tagReadingsCorrect,
     negativeCorrect,
     suggestionCorrect,
     conventions,
@@ -125,7 +134,7 @@ export function scoreLookup(item: GoldenItem, outcome: LookupOutcome): ItemScore
 
 export type Ratio = Readonly<{ numerator: number; denominator: number; value: number | null }>;
 
-function ratio(numerator: number, denominator: number): Ratio {
+export function ratio(numerator: number, denominator: number): Ratio {
   return { numerator, denominator, value: denominator === 0 ? null : numerator / denominator };
 }
 
@@ -136,8 +145,12 @@ export type LookupMetrics = Readonly<{
   tierALemmaRecall: Ratio;
   /** Tier A-amb: items with every required reading present. */
   ambiguityCoverage: Ratio;
-  /** Tiers A and A-amb: matched analyses whose specified tags are right. */
+  /** Tiers A and A-amb: tagged required readings found with correct tags; missing readings count as wrong (gated). */
   tagAccuracy: Ratio;
+  /** Same readings, coverage only: found at all. */
+  tagCoverage: Ratio;
+  /** Same readings, correctness only: correct among those found (reported, not gated). */
+  tagCorrectnessWhenFound: Ratio;
   negativeAccuracy: Ratio;
   suggestionAccuracy: Ratio;
   /** Tier C and convention checks on all items: prompt adherence (not gating). */
@@ -159,7 +172,9 @@ export function aggregateLookupScores(scores: readonly ItemScore[]): LookupMetri
     okRate: ratio(scores.filter(score => score.ok).length, scores.length),
     tierALemmaRecall: ratio(sum(tierA.map(score => score.requiredMatched)), sum(tierA.map(score => score.requiredTotal))),
     ambiguityCoverage: ratio(ambiguous.filter(score => score.requiredMatched === score.requiredTotal).length, ambiguous.length),
-    tagAccuracy: ratio(sum(gated.map(score => score.tagsCorrect)), sum(gated.map(score => score.tagsChecked))),
+    tagAccuracy: ratio(sum(gated.map(score => score.tagReadingsCorrect)), sum(gated.map(score => score.tagReadingsTotal))),
+    tagCoverage: ratio(sum(gated.map(score => score.tagReadingsFound)), sum(gated.map(score => score.tagReadingsTotal))),
+    tagCorrectnessWhenFound: ratio(sum(gated.map(score => score.tagReadingsCorrect)), sum(gated.map(score => score.tagReadingsFound))),
     negativeAccuracy: ratio(negatives.filter(score => score.negativeCorrect).length, negatives.length),
     suggestionAccuracy: ratio(suggestions.filter(score => score.suggestionCorrect).length, suggestions.length),
     conventionAdherence: ratio(conventions.filter(check => check.passed).length, conventions.length),
@@ -184,11 +199,15 @@ export function repeatStability(repetitions: readonly (readonly ItemScore[])[]):
 
 export type Gate = Readonly<{ name: string; threshold: number; actual: number | null; passed: boolean }>;
 
-/** Model-choice gates (plan R2-4). Convention adherence is reported, never gated. */
-export function modelChoiceGates(metrics: LookupMetrics, lookupLatencyP95Ms: number | null): readonly Gate[] {
+/**
+ * Model-choice gates (plan R2-4). Convention adherence is reported, never gated.
+ * `completeness` = executed / planned cases: an incomplete run can never pass.
+ */
+export function modelChoiceGates(metrics: LookupMetrics, lookupLatencyP95Ms: number | null, completeness: Ratio): readonly Gate[] {
   const atLeast = (name: string, value: number | null, threshold: number): Gate =>
     ({ name, threshold, actual: value, passed: value !== null && value >= threshold });
   return [
+    atLeast('run_complete', completeness.value, 1),
     atLeast('tier_a_lemma_recall', metrics.tierALemmaRecall.value, 0.9),
     atLeast('ambiguity_coverage', metrics.ambiguityCoverage.value, 0.8),
     atLeast('tag_accuracy', metrics.tagAccuracy.value, 0.85),

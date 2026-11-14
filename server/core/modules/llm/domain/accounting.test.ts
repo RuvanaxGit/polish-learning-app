@@ -54,7 +54,8 @@ describe('estimateRequest', () => {
     expect(estimatedCostMicroUsd(estimate, price)).toBe(1000 + 5000);
   });
 
-  it('is an upper bound of the actual cost for the same request', () => {
+  // Heuristic, not a guaranteed bound (see estimateRequest): the eval stops when an actual cost exceeds it.
+  it('exceeds the actual cost for typical usage within the output limit', () => {
     const estimate = { inputTokens: 1200, maxOutputTokens: 1500 };
     const actual = costMicroUsd({ inputTokens: 900, cachedInputTokens: 300, outputTokens: 1500 }, price);
     expect(actual).toBeLessThanOrEqual(estimatedCostMicroUsd(estimate, price));

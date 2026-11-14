@@ -20,10 +20,10 @@ export type RequestEstimate = Readonly<{
   maxOutputTokens: number;
 }>;
 
-// Deliberately pessimistic: English prose averages ~4 characters per token and
-// Polish ~3, so 2 overestimates input. The JSON schema of the structured output
-// is billed as input too, so it is part of the estimate.
-const CHARACTERS_PER_TOKEN_LOWER_BOUND = 2;
+// Pessimistic heuristic, NOT a guaranteed bound: English prose averages ~4
+// characters per token and Polish ~3, so 2 usually overestimates. The JSON
+// schema of the structured output is billed as input too, so it is included.
+const CHARACTERS_PER_TOKEN_ASSUMED = 2;
 const REQUEST_OVERHEAD_TOKENS = 64;
 
 function codePointLength(value: string): number {
@@ -31,8 +31,11 @@ function codePointLength(value: string): number {
 }
 
 /**
- * Worst-case token estimate made before a call (ARCHITECTURE.md 9.2.1):
- * input as an upper bound, output at the hard `max_output_tokens` limit.
+ * Pre-call token estimate (ARCHITECTURE.md 9.2.1). The output part is a hard
+ * provider limit (`max_output_tokens`, which includes reasoning). The input part
+ * is a HEURISTIC, not an upper bound: unusual text can tokenize at fewer than 2
+ * characters per token, and the provider may count framing or schema tokens we
+ * can't see. Callers must compare actual usage with the estimate afterwards.
  */
 export function estimateRequest(parts: Readonly<{
   instructions: string;
@@ -43,7 +46,7 @@ export function estimateRequest(parts: Readonly<{
   const schemaJson = JSON.stringify(z.toJSONSchema(parts.schema));
   const characters = codePointLength(parts.instructions) + codePointLength(parts.input) + codePointLength(schemaJson);
   return {
-    inputTokens: Math.ceil(characters / CHARACTERS_PER_TOKEN_LOWER_BOUND) + REQUEST_OVERHEAD_TOKENS,
+    inputTokens: Math.ceil(characters / CHARACTERS_PER_TOKEN_ASSUMED) + REQUEST_OVERHEAD_TOKENS,
     maxOutputTokens: parts.maxOutputTokens,
   };
 }
@@ -78,7 +81,7 @@ export function costMicroUsd(usage: TokenUsage, price: ModelPrice): number {
   return Math.ceil(nano / 1000);
 }
 
-/** Worst-case cost of an estimate: all input uncached, output at the limit. */
+/** Estimated cost: all input uncached, output at the limit. Only as reliable as the input estimate. */
 export function estimatedCostMicroUsd(estimate: RequestEstimate, price: ModelPrice): number {
   return costMicroUsd({ inputTokens: estimate.inputTokens, cachedInputTokens: 0, outputTokens: estimate.maxOutputTokens }, price);
 }

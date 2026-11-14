@@ -95,7 +95,7 @@ export function createOpenAiProviderWithClient(client: ResponsesClient, now: () 
       }
       catch (error) {
         const { kind, httpStatus } = classifyProviderError(error);
-        // No usage is reported for a thrown error; callers charge the worst case.
+        // No usage is reported for a thrown error; callers charge their estimate.
         return { kind: 'error', error: kind, usage: null, latencyMs: latency(), httpStatus };
       }
 

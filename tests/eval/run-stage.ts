@@ -13,7 +13,7 @@ import { executeCall } from './call';
 import type { CallRecord } from './call';
 import type { EvalConfig, StageName } from './config';
 import { GOLDEN_SET_STATUS } from './golden/morphology';
-import { aggregateLookupScores, modelChoiceGates, percentile, repeatStability, scoreLookup } from './scoring';
+import { aggregateLookupScores, modelChoiceGates, percentile, ratio, repeatStability, scoreLookup } from './scoring';
 import type { Gate, ItemScore, LookupMetrics, LookupOutcome, Ratio } from './scoring';
 import { describeLexeme, planStage } from './stages';
 import type { PlannedStep } from './stages';
@@ -23,6 +23,8 @@ export type TranslationRow = Readonly<{ subject: string; model: string; variant:
 export type ModelVariantMetrics = Readonly<{
   model: string;
   variant: 'combined' | 'split';
+  /** Executed / planned lookup cases over all repetitions. */
+  completeness: Ratio;
   metrics: LookupMetrics;
   stability: Ratio | null;
   lookupLatencyP95Ms: number | null;
@@ -40,6 +42,8 @@ export type StageReport = Readonly<{
   capMicroUsd: number;
   spentMicroUsd: number;
   stopReason: string | null;
+  /** Set when an unexpected exception ended the run; completed calls are still reported. */
+  abortReason: string | null;
   plannedSteps: number;
   skippedSteps: number;
   records: readonly CallRecord[];
@@ -77,10 +81,25 @@ function distinctLexemes(analyses: Outputs['analyses']): ShortTranslationLexeme[
 
 export type StageDeps = Readonly<{ provider: LlmProvider; now?: () => Date }>;
 
+type CaseKey = `${string}|${'combined' | 'split'}|${number}`;
+
+/** Planned lookup cases per model, variant, and repetition (the completeness denominator). */
+function plannedCases(plan: readonly PlannedStep[]): Map<CaseKey, number> {
+  const cases = new Map<CaseKey, number>();
+  for (const step of plan) {
+    if (step.type !== 'lookup' && step.type !== 'split') continue;
+    const key: CaseKey = step.type === 'lookup' ? `${step.model}|combined|${step.repetition}` : `${step.model}|split|1`;
+    cases.set(key, (cases.get(key) ?? 0) + 1);
+  }
+  return cases;
+}
+
 /**
  * Runs one evaluation stage sequentially. Fails closed: unknown model prices
  * abort before the first call; an EvalStop (cap reached, unknown usage, cost
- * above estimate, account/config errors) skips every remaining step.
+ * above estimate, account/config errors) skips every remaining step. An
+ * unexpected exception also ends the run, but the report keeps every
+ * completed call and its charged cost (`abortReason` says why it ended).
  */
 export async function runStage(
   stage: StageName,
@@ -98,6 +117,7 @@ export async function runStage(
   const scores: { model: string; variant: 'combined' | 'split'; repetition: number; score: ItemScore }[] = [];
   const translationRows: TranslationRow[] = [];
   let skippedSteps = 0;
+  let abortReason: string | null = null;
 
   async function runStep(step: PlannedStep, index: number): Promise<void> {
     const callId = (suffix: string) => `${stage}-${String(index).padStart(3, '0')}-${suffix}`;
@@ -185,7 +205,10 @@ export async function runStage(
       await runStep(step, index);
     }
     catch (error) {
-      if (!(error instanceof EvalStop)) throw error;
+      if (!(error instanceof EvalStop)) {
+        abortReason = `unexpected_error:${error instanceof Error ? error.name : 'unknown'}`;
+        budget.stop(abortReason);
+      }
       skippedSteps = plan.length - index;
       break;
     }
@@ -207,11 +230,12 @@ export async function runStage(
     capMicroUsd: budget.capMicroUsd,
     spentMicroUsd: budget.spentMicroUsd(),
     stopReason: budget.stopReason(),
+    abortReason,
     plannedSteps: plan.length,
     skippedSteps,
     records,
     scores,
-    lookupMetrics: summarize(scores, records),
+    lookupMetrics: summarize(scores, records, plannedCases(plan)),
     translationRows,
   };
 }
@@ -219,14 +243,24 @@ export async function runStage(
 function summarize(
   scores: readonly Readonly<{ model: string; variant: 'combined' | 'split'; repetition: number; score: ItemScore }>[],
   records: readonly CallRecord[],
+  planned: ReadonlyMap<CaseKey, number>,
 ): ModelVariantMetrics[] {
+  // Groups come from the plan, so a model/variant that never ran still appears (and fails).
   const groups = new Map<string, { model: string; variant: 'combined' | 'split' }>();
-  for (const entry of scores) groups.set(`${entry.model}|${entry.variant}`, { model: entry.model, variant: entry.variant });
+  for (const key of planned.keys()) {
+    const [model = '', variant] = key.split('|');
+    if (variant === 'combined' || variant === 'split') groups.set(`${model}|${variant}`, { model, variant });
+  }
 
   return [...groups.values()].map(({ model, variant }) => {
     const group = scores.filter(entry => entry.model === model && entry.variant === variant);
-    const repetitions = [...new Set(group.map(entry => entry.repetition))]
-      .map(repetition => group.filter(entry => entry.repetition === repetition).map(entry => entry.score));
+    const plannedRepetitions = [...planned.keys()]
+      .filter(key => key.startsWith(`${model}|${variant}|`))
+      .map(key => Number(key.split('|')[2]))
+      .sort((a, b) => a - b);
+    const expected = plannedRepetitions.reduce((total, repetition) => total + (planned.get(`${model}|${variant}|${repetition}`) ?? 0), 0);
+    const completeness = ratio(group.length, expected);
+    const repetitions = plannedRepetitions.map(repetition => group.filter(entry => entry.repetition === repetition).map(entry => entry.score));
     // Accuracy metrics use the first repetition, so repetitions don't double-weight items.
     const metrics = aggregateLookupScores(repetitions[0] ?? []);
     const latencies = records
@@ -236,10 +270,11 @@ function summarize(
     return {
       model,
       variant,
+      completeness,
       metrics,
       stability: repetitions.length > 1 ? repeatStability(repetitions) : null,
       lookupLatencyP95Ms,
-      gates: modelChoiceGates(metrics, lookupLatencyP95Ms),
+      gates: modelChoiceGates(metrics, lookupLatencyP95Ms, completeness),
     };
   });
 }

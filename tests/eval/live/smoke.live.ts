@@ -7,6 +7,7 @@ import { runLiveStage } from './run-live-stage';
 describe.skipIf(!isStageAuthorized('smoke', process.env))('live evaluation: smoke (paid)', () => {
   it('every prompt round-trips through Structured Outputs with known usage', async () => {
     const { report } = await runLiveStage(parseEvalConfig('smoke', process.env));
+    expect(report.abortReason).toBeNull();
     expect(report.stopReason).toBeNull();
     expect(report.records.map(record => [record.feature, record.status, record.accounting])).toEqual([
       ['lookup', 'ok', 'actual'],

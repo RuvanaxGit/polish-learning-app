@@ -9,6 +9,7 @@ import type {
   LlmProvider,
   PromptDefinition,
   ProviderErrorKind,
+  ProviderResult,
   ProviderUsage,
   RequestEstimate,
 } from '../../server/core/modules/llm/index';
@@ -34,7 +35,7 @@ export type CallRecord = Readonly<{
   estimate: RequestEstimate;
   estimatedCostMicroUsd: number;
   chargedCostMicroUsd: number;
-  /** `estimate` = usage unknown, the worst case was charged. */
+  /** `estimate` = usage unknown (or unpriceable); the heuristic estimate was charged. */
   accounting: 'actual' | 'estimate';
   latencyMs: number;
   /** Refined output when `status === 'ok'`. */
@@ -55,11 +56,19 @@ export type CallSpec<I, O> = Readonly<{
 // Configuration or account problems: every further call would fail the same way.
 const STOPPING_ERRORS: readonly ProviderErrorKind[] = ['insufficient_quota', 'auth', 'bad_request'];
 
+function errorName(error: unknown): string {
+  return error instanceof Error ? error.name : 'unknown';
+}
+
 /**
  * One accounted provider call. Pre-call: price lookup (throws for unknown
- * models), worst-case estimate, budget authorization (throws EvalStop).
+ * models), heuristic cost estimate, budget authorization (throws EvalStop).
  * Post-call: charge actual cost, or the estimate when usage is unknown, and
  * stop the budget whenever accounting is uncertain.
+ *
+ * Once the provider has been called, this always returns a record: an
+ * exception from the provider, the accounting, or `refine` is recorded (and
+ * charged) instead of propagating, so a paid call is never lost from the report.
  */
 export async function executeCall<I, O>(
   deps: Readonly<{ provider: LlmProvider; budget: EvalBudget }>,
@@ -72,19 +81,37 @@ export async function executeCall<I, O>(
   const estimatedCost = estimatedCostMicroUsd(estimate, price);
 
   deps.budget.authorize(estimatedCost);
-  const result = await deps.provider.complete({
-    model: spec.model,
-    instructions: prompt.instructions,
-    input: modelInput,
-    schema: prompt.schema,
-    schemaName: prompt.schemaName,
-    maxOutputTokens: prompt.maxOutputTokens,
-    timeoutMs: prompt.timeoutMs,
-  });
+  let result: ProviderResult<O>;
+  try {
+    result = await deps.provider.complete({
+      model: spec.model,
+      instructions: prompt.instructions,
+      input: modelInput,
+      schema: prompt.schema,
+      schemaName: prompt.schemaName,
+      maxOutputTokens: prompt.maxOutputTokens,
+      timeoutMs: prompt.timeoutMs,
+    });
+  }
+  catch (error) {
+    // The port promises not to throw; if it does, the request may have been billed.
+    deps.budget.stop(`provider_exception:${errorName(error)}`);
+    result = { kind: 'error', error: 'unknown', usage: null, latencyMs: 0, httpStatus: null };
+  }
 
-  const charged = result.usage ? costMicroUsd(result.usage, price) : estimatedCost;
+  let charged = estimatedCost;
+  let accounting: CallRecord['accounting'] = 'estimate';
+  if (result.usage) {
+    try {
+      charged = costMicroUsd(result.usage, price);
+      accounting = 'actual';
+    }
+    catch (error) {
+      deps.budget.stop(`accounting_error:${errorName(error)}`);
+    }
+  }
   deps.budget.settle(charged);
-  if (!result.usage) deps.budget.stop('usage_unknown');
+  if (accounting === 'estimate') deps.budget.stop('usage_unknown');
   else if (charged > estimatedCost) deps.budget.stop('actual_cost_exceeded_estimate');
   if (result.kind === 'error' && STOPPING_ERRORS.includes(result.error)) deps.budget.stop(`provider_${result.error}`);
 
@@ -96,20 +123,26 @@ export async function executeCall<I, O>(
   if (result.kind === 'error') status = 'provider_error';
   else if (result.kind === 'refusal') status = 'refusal';
   else {
-    // Defense in depth: validate again even though the adapter already did.
-    const parsed = prompt.schema.safeParse(result.output);
-    if (!parsed.success) status = 'schema_invalid';
-    else {
-      const refined = prompt.refine(parsed.data, spec.input);
-      warnings = refined.warnings;
-      if (refined.ok) {
-        status = 'ok';
-        value = refined.value;
-      }
+    try {
+      // Defense in depth: validate again even though the adapter already did.
+      const parsed = prompt.schema.safeParse(result.output);
+      if (!parsed.success) status = 'schema_invalid';
       else {
-        status = 'refine_failed';
-        refineReason = refined.reason;
+        const refined = prompt.refine(parsed.data, spec.input);
+        warnings = refined.warnings;
+        if (refined.ok) {
+          status = 'ok';
+          value = refined.value;
+        }
+        else {
+          status = 'refine_failed';
+          refineReason = refined.reason;
+        }
       }
+    }
+    catch (error) {
+      status = 'refine_failed';
+      refineReason = `exception:${errorName(error)}`;
     }
   }
 
@@ -132,7 +165,7 @@ export async function executeCall<I, O>(
       estimate,
       estimatedCostMicroUsd: estimatedCost,
       chargedCostMicroUsd: charged,
-      accounting: result.usage ? 'actual' : 'estimate',
+      accounting,
       latencyMs: result.latencyMs,
       output: value,
     },

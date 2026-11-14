@@ -7,6 +7,7 @@ import { runLiveStage } from './run-live-stage';
 describe.skipIf(!isStageAuthorized('full', process.env))('live evaluation: full (paid)', () => {
   it('runs within the application-level cost cap', async () => {
     const { report } = await runLiveStage(parseEvalConfig('full', process.env));
+    expect(report.abortReason).toBeNull();
     expect(report.spentMicroUsd).toBeLessThanOrEqual(report.capMicroUsd);
   }, 60 * 60_000);
 });
